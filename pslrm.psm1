@@ -1,5 +1,93 @@
 Set-StrictMode -Version Latest
 
+$script:PSLRMRequirementsFileName = 'psreq.psd1'
+$script:PSLRMLockfileFileName = 'psreq.lock.psd1'
+$script:PSLRMStoreDirectoryName = '.pslrm'
+
+# Internal helpers
+
+function Get-RequirementsPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProjectRoot
+    )
+
+    return Join-Path $ProjectRoot $script:PSLRMRequirementsFileName
+}
+
+function Get-LockfilePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProjectRoot
+    )
+
+    return Join-Path $ProjectRoot $script:PSLRMLockfileFileName
+}
+
+class PSLRMResource {
+    [string] $Name
+    [string] $Version
+    [string] $Repository
+    [bool] $IsDirect
+    [string] $ProjectRoot
+
+    PSLRMResource(
+        [string] $Name,
+        [string] $Version,
+        [string] $Repository,
+        [bool] $IsDirect,
+        [string] $ProjectRoot
+    ) {
+        $this.Name = $Name
+        $this.Version = $Version
+        $this.Repository = $Repository
+        $this.IsDirect = $IsDirect
+        $this.ProjectRoot = $ProjectRoot
+
+        $this.PSObject.TypeNames.Insert(0, 'PSLRM.Resource')
+    }
+}
+
+function ConvertTo-NormalizedVersionString {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object] $Version,
+
+        [Parameter()]
+        [AllowNull()]
+        [string] $Prerelease
+    )
+
+    if ($null -eq $Version) {
+        return $null
+    }
+
+    $normalized = if ($Version -is [string]) { $Version } else { $Version.ToString() }
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        return $null
+    }
+
+    $normalized = $normalized.Trim()
+
+    # NOTE: PSResourceGet reports prerelease separately (Version + Prerelease). Preserve it.
+    if (-not [string]::IsNullOrWhiteSpace($Prerelease)) {
+        $pr = $Prerelease.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($pr)) {
+            if ($normalized -notmatch '-') {
+                return "$normalized-$pr"
+            }
+        }
+    }
+
+    return $normalized
+}
+
 function ConvertTo-PowerShellDataFileLiteral {
     param(
         [Parameter(Mandatory)]
@@ -152,3 +240,123 @@ function Write-Lockfile {
     # NOTE: indent width is fixed to 4 for lockfile to ensure deterministic output.
     Write-PowerShellDataFile -Path $Path -Data $Data -IndentWidth 4
 }
+
+function Find-ProjectRoot {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [ValidateNotNullOrWhiteSpace()]
+        [string] $Path = (Get-Location).Path
+    )
+
+    $cursor = $Path
+
+    if (Test-Path -LiteralPath $cursor -PathType Leaf) {
+        $cursor = Split-Path -Parent -Path $cursor
+    }
+
+    if (-not (Test-Path -LiteralPath $cursor -PathType Container)) {
+        throw "Path not found or not a directory: $Path"
+    }
+
+    while ($true) {
+        $requirementsPath = Get-RequirementsPath -ProjectRoot $cursor
+        if (Test-Path -LiteralPath $requirementsPath) {
+            return $cursor
+        }
+
+        $parent = Split-Path -Parent -Path $cursor
+        if ([string]::IsNullOrWhiteSpace($parent) -or ($parent -eq $cursor)) {
+            break
+        }
+        $cursor = $parent
+    }
+
+    throw "Project root not found. Missing psreq.psd1 from: $Path"
+}
+
+function New-Resource {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Name,
+
+        [Parameter()]
+        [AllowNull()]
+        [object] $Version,
+
+        [Parameter()]
+        [AllowNull()]
+        [string] $Prerelease,
+
+        [Parameter()]
+        [AllowNull()]
+        [string] $Repository,
+
+        [Parameter(Mandatory)]
+        [bool] $IsDirect,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProjectRoot
+    )
+
+    $normalizedVersion = ConvertTo-NormalizedVersionString -Version $Version -Prerelease $Prerelease
+    return [PSLRMResource]::new($Name, $normalizedVersion, $Repository, $IsDirect, $ProjectRoot)
+}
+
+# Public cmdlets
+
+function Get-InstalledPSLResource {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path = (Get-Location).Path,
+
+        [Parameter()]
+        [switch] $IncludeDependencies
+    )
+
+    $projectRoot = Find-ProjectRoot -Path $Path
+    $requirementsPath = Get-RequirementsPath -ProjectRoot $projectRoot
+    $lockfilePath = Get-LockfilePath -ProjectRoot $projectRoot
+
+    $requirements = Import-PowerShellDataFile -Path $requirementsPath
+    if ($requirements -isnot [hashtable]) {
+        throw "Requirements file must be a hashtable: $requirementsPath"
+    }
+    $directNames = [string[]]$requirements.Keys
+
+    $lock = Read-Lockfile -Path $lockfilePath
+
+    $names = [string[]]$lock.Keys
+    [System.Array]::Sort($names, [System.StringComparer]::Ordinal)
+
+    $result = [System.Collections.Generic.List[PSLRMResource]]::new()
+    foreach ($name in $names) {
+        $entry = $lock[$name]
+        if ($entry -isnot [hashtable]) {
+            throw "Lockfile entry must be a hashtable for resource '$name': $lockfilePath"
+        }
+
+        $version = $entry['Version']
+        $prerelease = $entry['Prerelease']
+        if ($prerelease -isnot [string]) {
+            $prerelease = $null
+        }
+        $repository = $entry['Repository']
+
+        $isDirect = $directNames -contains $name
+        if ($IncludeDependencies -or $isDirect) {
+            $result.Add((New-Resource -Name $name -Version $version -Prerelease $prerelease -Repository $repository -IsDirect $isDirect -ProjectRoot $projectRoot))
+        }
+    }
+
+    return $result.ToArray()
+}
+
+Export-ModuleMember -Function @(
+    'Get-InstalledPSLResource'
+)

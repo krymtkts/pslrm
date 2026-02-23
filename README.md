@@ -20,6 +20,18 @@ It also keeps the requirements format compatible with PSResourceGet.
 - `psreq.lock.psd1`
   Lockfile (versions that PSResourceGet saved)
 
+In `psreq.psd1`, each entry is a hashtable keyed by module name.
+The following keys are commonly used by [PSResourceGet](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.psresourceget/about/about_psresourceget?view=powershellget-3.x#searching-by-required-resources).
+
+- `version`
+  A version string.
+  It can be a range expression like `[0.0.1,1.3.0]`.
+- `repository`
+  The repository name.
+  pslrm supports PSGallery.
+- `prerelease`
+  Set to `$true` to allow prerelease versions.
+
 The project root is the directory that contains `psreq.psd1`.
 
 ## Local directory (default)
@@ -64,3 +76,9 @@ pslrm does not impose a directory structure.
   PSResourceGet resolves dependencies.
 - pslrm does not attempt strict transitive dependency management.
   It records what PSResourceGet saved into the lockfile.
+- NOTE: PSResourceGet models prerelease versions separately from `Version`.
+  Example: `Version = 6.0.0` and `Prerelease = alpha5`.
+  To preserve prerelease info, pslrm stores versions as normalized strings in the lockfile.
+  Example: `6.0.0-alpha5`.
+  Ideally, pslrm would use `[System.Management.Automation.SemanticVersion]`.
+  Windows PowerShell 5.1 does not provide it.

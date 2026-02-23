@@ -3,6 +3,39 @@ BeforeAll {
     Import-Module $modulePath -Force
 }
 
+Describe 'ConvertTo-NormalizedVersionString' {
+    It 'returns null for null version' {
+        InModuleScope pslrm {
+            ConvertTo-NormalizedVersionString -Version $null | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'trims and normalizes version to string' {
+        InModuleScope pslrm {
+            ConvertTo-NormalizedVersionString -Version ' 1.2.3 ' | Should -BeExactly '1.2.3'
+            ConvertTo-NormalizedVersionString -Version ([version]'2.3.4') | Should -BeExactly '2.3.4'
+        }
+    }
+
+    It 'preserves version range expressions' {
+        InModuleScope pslrm {
+            ConvertTo-NormalizedVersionString -Version '[0.0.1,1.3.0]' | Should -BeExactly '[0.0.1,1.3.0]'
+        }
+    }
+
+    It 'appends prerelease when version has no prerelease part' {
+        InModuleScope pslrm {
+            ConvertTo-NormalizedVersionString -Version '6.0.0' -Prerelease 'alpha5' | Should -BeExactly '6.0.0-alpha5'
+        }
+    }
+
+    It 'does not double-append prerelease when version already has it' {
+        InModuleScope pslrm {
+            ConvertTo-NormalizedVersionString -Version '6.0.0-alpha5' -Prerelease 'alpha5' | Should -BeExactly '6.0.0-alpha5'
+        }
+    }
+}
+
 Describe 'Write-PowerShellDataFile' {
     It 'writes expected text format' {
         InModuleScope pslrm {
@@ -108,6 +141,7 @@ Describe 'Write-PowerShellDataFile' {
         }
     }
 }
+
 
 Describe 'Write-Lockfile' {
     It 'writes expected text format' {
@@ -296,5 +330,94 @@ Describe 'Read-Lockfile + Write-Lockfile' {
         }
 
         $result.Read | Should-BeEquivalent $result.Expected
+    }
+}
+
+Describe 'Find-ProjectRoot' {
+    It 'finds the project root by searching parent directories' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj'
+            $nested = Join-Path $root 'a\b\c'
+            New-Item -ItemType Directory -Path $nested -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ A = @{ Version = [version]'1.0.0'; Repository = 'PSGallery' } }
+            Find-ProjectRoot -Path $nested | Should -BeExactly $root
+        }
+    }
+}
+
+Describe 'Get-InstalledPSLResource' {
+    It 'lists direct resources by default and marks IsDirect' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj2'
+            $nested = Join-Path $root 'src'
+            New-Item -ItemType Directory -Path $nested -Force | Out-Null
+
+            $req = @{ A = @{ Version = [version]'1.0.0'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $lock = @{
+                A = @{ Version = [version]'1.0.0'; Repository = 'PSGallery' }
+                Dep = @{ Version = [version]'9.9.9'; Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data $lock
+
+            $actual = @(Get-InstalledPSLResource -Path $nested)
+
+            $actual.Count | Should -Be 1
+            $actual[0].Name | Should -BeExactly 'A'
+            $actual[0].IsDirect | Should -BeTrue
+            $actual[0].PSObject.TypeNames[0] | Should -BeExactly 'PSLRM.Resource'
+        }
+    }
+
+    It 'normalizes prerelease when lockfile provides Version + Prerelease' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-pre'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ Pester = @{ Version = '[6.0.0,7.0.0)'; Repository = 'PSGallery'; Prerelease = $true } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $lock = @{ Pester = @{ Version = '6.0.0'; Prerelease = 'alpha5'; Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data $lock
+
+            $actual = @(Get-InstalledPSLResource -Path $root)
+
+            $actual.Count | Should -Be 1
+            $actual[0].Name | Should -BeExactly 'Pester'
+            $actual[0].Version | Should -BeExactly '6.0.0-alpha5'
+        }
+    }
+
+    It 'lists all saved resources with -IncludeDependencies' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj3'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = [version]'1.0.0'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $lock = @{
+                A = @{ Version = [version]'1.0.0'; Repository = 'PSGallery' }
+                Dep = @{ Version = [version]'9.9.9'; Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data $lock
+
+            $actual = @(Get-InstalledPSLResource -Path $root -IncludeDependencies)
+            ($actual | ForEach-Object Name) | Should -Be @('A', 'Dep')
+            ($actual | Where-Object Name -EQ 'Dep').IsDirect | Should -BeFalse
+        }
+    }
+
+    It 'errors if the lockfile is missing' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj4'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ A = @{ Version = [version]'1.0.0'; Repository = 'PSGallery' } }
+
+            { Get-InstalledPSLResource -Path $root } | Should -Throw
+        }
     }
 }
