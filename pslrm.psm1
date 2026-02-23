@@ -114,3 +114,41 @@ function Write-PowerShellDataFile {
         }
     }
 }
+
+function Read-Lockfile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })]
+        [string] $Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Lockfile not found: $Path"
+    }
+
+    $data = Import-PowerShellDataFile -Path $Path
+    if ($data -isnot [hashtable]) {
+        throw "Lockfile must be a hashtable: $Path"
+    }
+
+    return $data
+}
+
+function Write-Lockfile {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })]
+        [string] $Path,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [hashtable] $Data
+    )
+
+    # NOTE: indent width is fixed to 4 for lockfile to ensure deterministic output.
+    Write-PowerShellDataFile -Path $Path -Data $Data -IndentWidth 4
+}
