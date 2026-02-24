@@ -423,6 +423,75 @@ Describe 'Get-InstalledPSLResource' {
 }
 
 Describe 'Install-PSLResource' {
+    BeforeAll {
+        InModuleScope pslrm {
+            Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
+
+            function script:New-TestPSResourceInfo {
+                [CmdletBinding()]
+                param(
+                    [Parameter(Mandatory)]
+                    [ValidateNotNullOrEmpty()]
+                    [string] $Name,
+
+                    [Parameter(Mandatory)]
+                    [ValidateNotNullOrEmpty()]
+                    [string] $Version,
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [string] $Prerelease,
+
+                    [Parameter()]
+                    [ValidateNotNullOrEmpty()]
+                    [string] $Repository = 'PSGallery'
+                )
+
+                $type = [Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]
+                $flags = [System.Reflection.BindingFlags]'Instance,NonPublic'
+                $ctor = $type.GetConstructors($flags) | Where-Object { $_.GetParameters().Count -eq 24 } | Select-Object -First 1
+                if ($null -eq $ctor) {
+                    throw 'Failed to locate a non-public PSResourceInfo constructor for tests.'
+                }
+
+                $includesType = [Microsoft.PowerShell.PSResourceGet.UtilClasses.ResourceIncludes]
+                $includes = [System.Activator]::CreateInstance($includesType, $true)
+                $deps = [Microsoft.PowerShell.PSResourceGet.UtilClasses.Dependency[]]@()
+                $metadata = [System.Collections.Generic.Dictionary[string, string]]::new()
+
+                $isPrerelease = -not [string]::IsNullOrWhiteSpace($Prerelease)
+                $versionObj = [version]$Version
+
+                return [Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]$ctor.Invoke(@(
+                        $metadata,
+                        $null,
+                        $null,
+                        $null,
+                        $deps,
+                        $null,
+                        $null,
+                        $includes,
+                        $null,
+                        $null,
+                        $isPrerelease,
+                        $null,
+                        $Name,
+                        '3.0.0',
+                        $Prerelease,
+                        $null,
+                        $null,
+                        $null,
+                        $Repository,
+                        $null,
+                        [string[]]@(),
+                        [Microsoft.PowerShell.PSResourceGet.UtilClasses.ResourceType]::Module,
+                        $null,
+                        $versionObj
+                    ))
+            }
+        }
+    }
+
     It 'calls Save-PSResource via wrapper, writes lockfile, and outputs direct resources by default' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-install'
@@ -432,8 +501,8 @@ Describe 'Install-PSLResource' {
             Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
 
             $saved = @(
-                [pscustomobject]@{ Name = 'A'; Version = '1.2.3'; Prerelease = $null; Repository = 'PSGallery' },
-                [pscustomobject]@{ Name = 'Dep'; Version = '9.9.9'; Prerelease = $null; Repository = 'PSGallery' }
+                (New-TestPSResourceInfo -Name 'A' -Version '1.2.3' -Prerelease $null -Repository 'PSGallery'),
+                (New-TestPSResourceInfo -Name 'Dep' -Version '9.9.9' -Prerelease $null -Repository 'PSGallery')
             )
 
             Mock Invoke-SavePSResource -ModuleName pslrm {
@@ -471,8 +540,8 @@ Describe 'Install-PSLResource' {
             Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
 
             $saved = @(
-                [pscustomobject]@{ Name = 'Dep'; Version = '9.9.9'; Prerelease = $null; Repository = 'PSGallery' },
-                [pscustomobject]@{ Name = 'A'; Version = '1.2.3'; Prerelease = $null; Repository = 'PSGallery' }
+                (New-TestPSResourceInfo -Name 'Dep' -Version '9.9.9' -Prerelease $null -Repository 'PSGallery'),
+                (New-TestPSResourceInfo -Name 'A' -Version '1.2.3' -Prerelease $null -Repository 'PSGallery')
             )
 
             Mock Invoke-SavePSResource -ModuleName pslrm { return $saved }

@@ -8,6 +8,7 @@ $script:PSLRMStoreDirectoryName = '.pslrm'
 
 function Get-RequirementsPath {
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -19,6 +20,7 @@ function Get-RequirementsPath {
 
 function Get-LockfilePath {
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -30,6 +32,7 @@ function Get-LockfilePath {
 
 function Get-StorePath {
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -65,6 +68,7 @@ class PSLRMResource {
 
 function ConvertTo-NormalizedVersionString {
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter()]
         [AllowNull()]
@@ -100,6 +104,7 @@ function ConvertTo-NormalizedVersionString {
 }
 
 function ConvertTo-PowerShellDataFileLiteral {
+    [OutputType([string])]
     param(
         [Parameter(Mandatory)]
         [AllowNull()]
@@ -216,6 +221,7 @@ function Write-PowerShellDataFile {
 
 function Read-Lockfile {
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -254,6 +260,7 @@ function Write-Lockfile {
 
 function Find-ProjectRoot {
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter()]
         [ValidateNotNullOrWhiteSpace()]
@@ -288,6 +295,7 @@ function Find-ProjectRoot {
 
 function New-Resource {
     [CmdletBinding()]
+    [OutputType([PSLRMResource])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -346,6 +354,7 @@ function Assert-RequirementsAreSupported {
 
 function Invoke-SavePSResource {
     [CmdletBinding()]
+    [OutputType([Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -389,6 +398,7 @@ function Invoke-SavePSResource {
 
 function Get-InstalledPSLResource {
     [CmdletBinding()]
+    [OutputType([PSLRMResource])]
     param(
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -438,6 +448,7 @@ function Get-InstalledPSLResource {
 
 function Install-PSLResource {
     [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([PSLRMResource])]
     param(
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -463,7 +474,7 @@ function Install-PSLResource {
         return
     }
 
-    $savedResources = [System.Collections.Generic.List[object]]::new()
+    $savedResources = [System.Collections.Generic.List[Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]]::new()
     $directNames = [string[]]$requirements.Keys
     foreach ($name in $directNames) {
         $entry = $requirements[$name]
@@ -490,7 +501,12 @@ function Install-PSLResource {
             $prereleaseSwitch = [bool]$entry['Prerelease']
         }
 
-        $savedResources.AddRange(@(Invoke-SavePSResource -Name $name -Version $verString -Prerelease:$prereleaseSwitch -Repository 'PSGallery' -Path $storePath))
+        $saved = Invoke-SavePSResource -Name $name -Version $verString -Prerelease:$prereleaseSwitch -Repository 'PSGallery' -Path $storePath
+        foreach ($s in @($saved)) {
+            if ($null -ne $s) {
+                $savedResources.Add($s)
+            }
+        }
     }
 
     $lockData = @{}
