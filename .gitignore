@@ -1,2 +1,5 @@
 .tmp
+
+# Pester
 testResults.xml
+coverage.xml
