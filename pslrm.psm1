@@ -14,7 +14,7 @@ function Get-RequirementsPath {
         [string] $ProjectRoot
     )
 
-    return Join-Path $ProjectRoot $script:PSLRMRequirementsFileName
+    Join-Path $ProjectRoot $script:PSLRMRequirementsFileName
 }
 
 function Get-LockfilePath {
@@ -25,7 +25,7 @@ function Get-LockfilePath {
         [string] $ProjectRoot
     )
 
-    return Join-Path $ProjectRoot $script:PSLRMLockfileFileName
+    Join-Path $ProjectRoot $script:PSLRMLockfileFileName
 }
 
 function Get-StorePath {
@@ -36,7 +36,7 @@ function Get-StorePath {
         [string] $ProjectRoot
     )
 
-    return Join-Path $ProjectRoot $script:PSLRMStoreDirectoryName
+    Join-Path $ProjectRoot $script:PSLRMStoreDirectoryName
 }
 
 class PSLRMResource {
@@ -96,7 +96,7 @@ function ConvertTo-NormalizedVersionString {
         }
     }
 
-    return $normalized
+    $normalized
 }
 
 function ConvertTo-PowerShellDataFileLiteral {
@@ -232,7 +232,7 @@ function Read-Lockfile {
         throw "Lockfile must be a hashtable: $Path"
     }
 
-    return $data
+    $data
 }
 
 function Write-Lockfile {
@@ -314,7 +314,7 @@ function New-Resource {
     )
 
     $normalizedVersion = ConvertTo-NormalizedVersionString -Version $Version -Prerelease $Prerelease
-    return [PSLRMResource]::new($Name, $normalizedVersion, $Repository, $IsDirect, $ProjectRoot)
+    [PSLRMResource]::new($Name, $normalizedVersion, $Repository, $IsDirect, $ProjectRoot)
 }
 
 function Assert-RequirementsAreSupported {
@@ -433,7 +433,7 @@ function Get-InstalledPSLResource {
         }
     }
 
-    return $result.ToArray()
+    $result.ToArray()
 }
 
 function Install-PSLResource {
@@ -533,7 +533,7 @@ function Install-PSLResource {
         }
     }
 
-    return $result.ToArray()
+    $result.ToArray()
 }
 
 Export-ModuleMember -Function @(
