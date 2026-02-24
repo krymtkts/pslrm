@@ -421,3 +421,80 @@ Describe 'Get-InstalledPSLResource' {
         }
     }
 }
+
+Describe 'Install-PSLResource' {
+    It 'calls Save-PSResource via wrapper, writes lockfile, and outputs direct resources by default' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-install'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $saved = @(
+                [pscustomobject]@{ Name = 'A'; Version = '1.2.3'; Prerelease = $null; Repository = 'PSGallery' },
+                [pscustomobject]@{ Name = 'Dep'; Version = '9.9.9'; Prerelease = $null; Repository = 'PSGallery' }
+            )
+
+            Mock Invoke-SavePSResource -ModuleName pslrm {
+                param([string] $Name, [string] $Version, [switch] $Prerelease, [string] $Repository, [string] $Path)
+                $script:captured = [pscustomobject]@{ Name = $Name; Version = $Version; Prerelease = [bool]$Prerelease; Repository = $Repository; Path = $Path }
+                return $saved
+            }
+
+            $actual = @(Install-PSLResource -Path $root)
+
+            $script:captured.Name | Should -BeExactly 'A'
+            $script:captured.Version | Should -BeExactly '[1.0.0,2.0.0)'
+            $script:captured.Prerelease | Should -BeFalse
+            $script:captured.Repository | Should -BeExactly 'PSGallery'
+            $script:captured.Path | Should -BeExactly (Join-Path $root '.pslrm')
+
+            $lockPath = Join-Path $root 'psreq.lock.psd1'
+            $lock = Read-Lockfile -Path $lockPath
+            $lock.Keys.Count | Should -Be 2
+            $lock['A']['Version'] | Should -BeExactly '1.2.3'
+            $lock['Dep']['Version'] | Should -BeExactly '9.9.9'
+
+            ($actual | ForEach-Object Name) | Should -Be @('A')
+            $actual[0].IsDirect | Should -BeTrue
+            $actual[0].ProjectRoot | Should -BeExactly $root
+        }
+    }
+
+    It 'outputs dependencies when -IncludeDependencies is specified' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-install-deps'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $saved = @(
+                [pscustomobject]@{ Name = 'Dep'; Version = '9.9.9'; Prerelease = $null; Repository = 'PSGallery' },
+                [pscustomobject]@{ Name = 'A'; Version = '1.2.3'; Prerelease = $null; Repository = 'PSGallery' }
+            )
+
+            Mock Invoke-SavePSResource -ModuleName pslrm { return $saved }
+
+            $actual = @(Install-PSLResource -Path $root -IncludeDependencies)
+
+            ($actual | ForEach-Object Name) | Should -Be @('A', 'Dep')
+            ($actual | Where-Object Name -EQ 'Dep').IsDirect | Should -BeFalse
+        }
+    }
+
+    It 'errors when requirements specify a non-PSGallery repository' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-install-bad-repo'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'OtherRepo' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            Mock Invoke-SavePSResource -ModuleName pslrm { throw 'should not be called' }
+
+            { Install-PSLResource -Path $root } | Should -Throw
+        }
+    }
+}

@@ -28,6 +28,17 @@ function Get-LockfilePath {
     return Join-Path $ProjectRoot $script:PSLRMLockfileFileName
 }
 
+function Get-StorePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProjectRoot
+    )
+
+    return Join-Path $ProjectRoot $script:PSLRMStoreDirectoryName
+}
+
 class PSLRMResource {
     [string] $Name
     [string] $Version
@@ -306,6 +317,74 @@ function New-Resource {
     return [PSLRMResource]::new($Name, $normalizedVersion, $Repository, $IsDirect, $ProjectRoot)
 }
 
+function Assert-RequirementsAreSupported {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [hashtable] $Requirements,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $RequirementsPath
+    )
+
+    foreach ($name in $Requirements.Keys) {
+        $entry = $Requirements[$name]
+        if ($entry -isnot [hashtable]) {
+            throw "Requirement entry must be a hashtable for resource '$name': $RequirementsPath"
+        }
+
+        $repository = $entry['Repository']
+        if ($repository -is [string] -and (-not [string]::IsNullOrWhiteSpace($repository))) {
+            if ($repository -ine 'PSGallery') {
+                throw "Only PSGallery is supported for Repository. Invalid repository '$repository' for '$name' in: $RequirementsPath"
+            }
+        }
+    }
+}
+
+function Invoke-SavePSResource {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Name,
+
+        [Parameter()]
+        [AllowNull()]
+        [string] $Version,
+
+        [Parameter()]
+        [switch] $Prerelease,
+
+        [Parameter()]
+        [AllowNull()]
+        [string] $Repository,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path
+    )
+
+    $params = @{
+        Name = $Name
+        Path = $Path
+        PassThru = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Version)) {
+        $params['Version'] = $Version
+    }
+    if ($Prerelease) {
+        $params['Prerelease'] = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Repository)) {
+        $params['Repository'] = $Repository
+    }
+
+    Save-PSResource @params
+}
+
 # Public cmdlets
 
 function Get-InstalledPSLResource {
@@ -357,6 +436,107 @@ function Get-InstalledPSLResource {
     return $result.ToArray()
 }
 
+function Install-PSLResource {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path = (Get-Location).Path,
+
+        [Parameter()]
+        [switch] $IncludeDependencies
+    )
+
+    $projectRoot = Find-ProjectRoot -Path $Path
+    $requirementsPath = Get-RequirementsPath -ProjectRoot $projectRoot
+    $lockfilePath = Get-LockfilePath -ProjectRoot $projectRoot
+    $storePath = Get-StorePath -ProjectRoot $projectRoot
+
+    $requirements = Import-PowerShellDataFile -Path $requirementsPath
+    if ($requirements -isnot [hashtable]) {
+        throw "Requirements file must be a hashtable: $requirementsPath"
+    }
+
+    Assert-RequirementsAreSupported -Requirements $requirements -RequirementsPath $requirementsPath
+
+    if (-not $PSCmdlet.ShouldProcess($projectRoot, 'Install project-local resources')) {
+        return
+    }
+
+    $savedResources = [System.Collections.Generic.List[object]]::new()
+    $directNames = [string[]]$requirements.Keys
+    foreach ($name in $directNames) {
+        $entry = $requirements[$name]
+        if ($entry -isnot [hashtable]) {
+            throw "Requirement entry must be a hashtable for resource '$name': $requirementsPath"
+        }
+
+        $ver = $entry['Version']
+        $verString = if ($null -eq $ver) {
+            $null
+        }
+        elseif ($ver -is [string]) {
+            $ver.Trim()
+        }
+        else {
+            $ver.ToString()
+        }
+        if ([string]::IsNullOrWhiteSpace($verString)) {
+            $verString = $null
+        }
+
+        $prereleaseSwitch = $false
+        if ($entry.ContainsKey('Prerelease')) {
+            $prereleaseSwitch = [bool]$entry['Prerelease']
+        }
+
+        $savedResources.AddRange(@(Invoke-SavePSResource -Name $name -Version $verString -Prerelease:$prereleaseSwitch -Repository 'PSGallery' -Path $storePath))
+    }
+
+    $lockData = @{}
+    foreach ($r in $savedResources) {
+        if ($null -eq $r) {
+            continue
+        }
+
+        $name = $r.Name
+        if (-not ($name -is [string]) -or [string]::IsNullOrWhiteSpace($name)) {
+            throw 'Save-PSResource returned an entry without a valid Name.'
+        }
+
+        $repository = $r.Repository
+        if (-not ($repository -is [string]) -or [string]::IsNullOrWhiteSpace($repository)) {
+            $repository = 'PSGallery'
+        }
+        if ($repository -ine 'PSGallery') {
+            throw "Only PSGallery is supported for Repository. Invalid repository '$repository' returned for '$name'."
+        }
+
+        $normalizedVersion = ConvertTo-NormalizedVersionString -Version $r.Version -Prerelease $r.Prerelease
+        $lockData[$name] = @{
+            Version = $normalizedVersion
+            Repository = 'PSGallery'
+        }
+    }
+
+    Write-Lockfile -Path $lockfilePath -Data $lockData
+
+    $names = [string[]]$lockData.Keys
+    [System.Array]::Sort($names, [System.StringComparer]::Ordinal)
+
+    $result = [System.Collections.Generic.List[PSLRMResource]]::new()
+    foreach ($name in $names) {
+        $isDirect = $directNames -contains $name
+        if ($IncludeDependencies -or $isDirect) {
+            $entry = $lockData[$name]
+            $result.Add((New-Resource -Name $name -Version $entry['Version'] -Prerelease $null -Repository 'PSGallery' -IsDirect $isDirect -ProjectRoot $projectRoot))
+        }
+    }
+
+    return $result.ToArray()
+}
+
 Export-ModuleMember -Function @(
-    'Get-InstalledPSLResource'
+    'Get-InstalledPSLResource',
+    'Install-PSLResource'
 )
