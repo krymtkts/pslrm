@@ -1,5 +1,5 @@
 BeforeAll {
-    $modulePath = Join-Path $PSScriptRoot '..\pslrm.psm1'
+    $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
     Import-Module $modulePath -Force
 }
 
