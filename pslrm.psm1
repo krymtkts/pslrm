@@ -376,6 +376,13 @@ function Invoke-SavePSResource {
         [string] $Path
     )
 
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    }
+    elseif (Test-Path -LiteralPath $Path -PathType Leaf) {
+        throw "Save path must be a directory: $Path"
+    }
+
     $params = @{
         Name = $Name
         Path = $Path
