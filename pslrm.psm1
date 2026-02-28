@@ -577,6 +577,53 @@ function Save-LockDataToStore {
     }
 }
 
+function Invoke-InstallOrUpdateCore {
+    [CmdletBinding()]
+    [OutputType([PSLRMResource])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProjectRoot,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('Install', 'Update')]
+        [string] $Operation,
+
+        [Parameter(Mandatory)]
+        [bool] $IncludeDependencies
+    )
+
+    $requirementsPath = Get-RequirementsPath -ProjectRoot $ProjectRoot
+    $lockfilePath = Get-LockfilePath -ProjectRoot $ProjectRoot
+    $storePath = Get-StorePath -ProjectRoot $ProjectRoot
+
+    $requirements = Import-PowerShellDataFile -Path $requirementsPath
+    if ($requirements -isnot [hashtable]) {
+        throw "Requirements file must be a hashtable: $requirementsPath"
+    }
+
+    Assert-RequirementsAreSupported -Requirements $requirements -RequirementsPath $requirementsPath
+    $directNames = [string[]]$requirements.Keys
+
+    if (($Operation -eq 'Install') -and (Test-Path -LiteralPath $lockfilePath)) {
+        # Keep install reproducible when lockfile exists; future lock freshness checks can branch here.
+        $lockData = Read-Lockfile -Path $lockfilePath
+        Save-LockDataToStore -LockData $lockData -StorePath $storePath
+
+        return (ConvertTo-PSLRMResourcesFromLockData -LockData $lockData -DirectNames $directNames -IncludeDependencies $IncludeDependencies -ProjectRoot $ProjectRoot)
+    }
+
+    # Shared resolve-and-write path (currently Update always and Install when lockfile is missing).
+    # Future module-scoped operations can filter requirements before resolution here.
+    $resolved = Resolve-RequirementsToLockData -Requirements $requirements -RequirementsPath $requirementsPath -StorePath $storePath
+    $directNames = [string[]]$resolved['DirectNames']
+    $lockData = [hashtable]$resolved['LockData']
+
+    Write-Lockfile -Path $lockfilePath -Data $lockData
+
+    ConvertTo-PSLRMResourcesFromLockData -LockData $lockData -DirectNames $directNames -IncludeDependencies $IncludeDependencies -ProjectRoot $ProjectRoot
+}
+
 # Public cmdlets
 
 function Get-InstalledPSLResource {
@@ -642,36 +689,11 @@ function Install-PSLResource {
     )
 
     $projectRoot = Find-ProjectRoot -Path $Path
-    $requirementsPath = Get-RequirementsPath -ProjectRoot $projectRoot
-    $lockfilePath = Get-LockfilePath -ProjectRoot $projectRoot
-    $storePath = Get-StorePath -ProjectRoot $projectRoot
-
-    $requirements = Import-PowerShellDataFile -Path $requirementsPath
-    if ($requirements -isnot [hashtable]) {
-        throw "Requirements file must be a hashtable: $requirementsPath"
-    }
-    Assert-RequirementsAreSupported -Requirements $requirements -RequirementsPath $requirementsPath
-    $directNames = [string[]]$requirements.Keys
-
     if (-not $PSCmdlet.ShouldProcess($projectRoot, 'Install project-local resources')) {
         return
     }
 
-    if (Test-Path -LiteralPath $lockfilePath) {
-        $lockData = Read-Lockfile -Path $lockfilePath
-        Save-LockDataToStore -LockData $lockData -StorePath $storePath
-
-        ConvertTo-PSLRMResourcesFromLockData -LockData $lockData -DirectNames $directNames -IncludeDependencies ([bool]$IncludeDependencies) -ProjectRoot $projectRoot
-        return
-    }
-
-    $resolved = Resolve-RequirementsToLockData -Requirements $requirements -RequirementsPath $requirementsPath -StorePath $storePath
-    $directNames = [string[]]$resolved['DirectNames']
-    $lockData = [hashtable]$resolved['LockData']
-
-    Write-Lockfile -Path $lockfilePath -Data $lockData
-
-    ConvertTo-PSLRMResourcesFromLockData -LockData $lockData -DirectNames $directNames -IncludeDependencies ([bool]$IncludeDependencies) -ProjectRoot $projectRoot
+    Invoke-InstallOrUpdateCore -ProjectRoot $projectRoot -Operation 'Install' -IncludeDependencies ([bool]$IncludeDependencies)
 }
 
 function Update-PSLResource {
@@ -687,27 +709,11 @@ function Update-PSLResource {
     )
 
     $projectRoot = Find-ProjectRoot -Path $Path
-    $requirementsPath = Get-RequirementsPath -ProjectRoot $projectRoot
-    $lockfilePath = Get-LockfilePath -ProjectRoot $projectRoot
-    $storePath = Get-StorePath -ProjectRoot $projectRoot
-
-    $requirements = Import-PowerShellDataFile -Path $requirementsPath
-    if ($requirements -isnot [hashtable]) {
-        throw "Requirements file must be a hashtable: $requirementsPath"
-    }
-
     if (-not $PSCmdlet.ShouldProcess($projectRoot, 'Update project-local resources')) {
         return
     }
 
-    # Update also regenerates lockfile from scratch to keep it aligned with the latest save results.
-    $resolved = Resolve-RequirementsToLockData -Requirements $requirements -RequirementsPath $requirementsPath -StorePath $storePath
-    $directNames = [string[]]$resolved['DirectNames']
-    $lockData = [hashtable]$resolved['LockData']
-
-    Write-Lockfile -Path $lockfilePath -Data $lockData
-
-    ConvertTo-PSLRMResourcesFromLockData -LockData $lockData -DirectNames $directNames -IncludeDependencies ([bool]$IncludeDependencies) -ProjectRoot $projectRoot
+    Invoke-InstallOrUpdateCore -ProjectRoot $projectRoot -Operation 'Update' -IncludeDependencies ([bool]$IncludeDependencies)
 }
 
 Export-ModuleMember -Function @(
