@@ -107,3 +107,57 @@ Describe 'Integration: Update-PSLResource (Save-PSResource real)' {
         }
     }
 }
+
+Describe 'Integration: Uninstall-PSLResource' {
+    BeforeAll {
+        $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
+        Import-Module $modulePath -Force
+
+        Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
+
+        $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
+        if ($repo.PSObject.Properties.Name -contains 'Trusted') {
+            if (-not [bool]$repo.Trusted) {
+                throw 'PSGallery is not trusted. Trust it before running integration tests.'
+            }
+        }
+    }
+
+    It 'removes a direct dependency and rewrites requirements/lock/store' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-integration-uninstall'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ 'Get-GzipContent' = @{ Repository = 'PSGallery' } }
+            $reqPath = Join-Path $root 'psreq.psd1'
+            $lockPath = Join-Path $root 'psreq.lock.psd1'
+            $storePath = Join-Path $root '.pslrm'
+
+            Write-PowerShellDataFile -Path $reqPath -Data $req
+
+            $installed = @(Install-PSLResource -Path $root -Confirm:$false)
+            $installed.Count | Should -Be 1
+            $installed[0].Name | Should -BeExactly 'Get-GzipContent'
+
+            Test-Path -LiteralPath $lockPath | Should -BeTrue
+            Test-Path -LiteralPath $storePath | Should -BeTrue
+
+            $actual = @(Uninstall-PSLResource -Path $root -Name 'Get-GzipContent' -Confirm:$false)
+            $actual.Count | Should -Be 0
+
+            $reqAfter = Import-PowerShellDataFile -Path $reqPath
+            $reqAfter.Count | Should -Be 0
+
+            $lockAfter = Read-Lockfile -Path $lockPath
+            $lockAfter.Count | Should -Be 0
+
+            Test-Path -LiteralPath $storePath | Should -BeFalse
+
+            Write-Host "Requirements content at ${reqPath}:" -ForegroundColor DarkGray
+            Get-Content $reqPath | Write-Host -ForegroundColor DarkGray
+
+            Write-Host "Lockfile content at ${lockPath}:" -ForegroundColor DarkGray
+            Get-Content $lockPath | Write-Host -ForegroundColor DarkGray
+        }
+    }
+}

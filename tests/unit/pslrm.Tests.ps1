@@ -1,6 +1,73 @@
 BeforeAll {
     $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
     Import-Module $modulePath -Force
+
+    InModuleScope pslrm {
+        Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
+
+        function script:New-TestPSResourceInfo {
+            [CmdletBinding()]
+            param(
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $Name,
+
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $Version,
+
+                [Parameter()]
+                [AllowNull()]
+                [string] $Prerelease,
+
+                [Parameter()]
+                [ValidateNotNullOrEmpty()]
+                [string] $Repository = 'PSGallery'
+            )
+
+            $type = [Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]
+            $flags = [System.Reflection.BindingFlags]'Instance,NonPublic'
+            $ctor = $type.GetConstructors($flags) | Where-Object { $_.GetParameters().Count -eq 24 } | Select-Object -First 1
+            if ($null -eq $ctor) {
+                throw 'Failed to locate a non-public PSResourceInfo constructor for tests.'
+            }
+
+            $includesType = [Microsoft.PowerShell.PSResourceGet.UtilClasses.ResourceIncludes]
+            $includes = [System.Activator]::CreateInstance($includesType, $true)
+            $deps = [Microsoft.PowerShell.PSResourceGet.UtilClasses.Dependency[]]@()
+            $metadata = [System.Collections.Generic.Dictionary[string, string]]::new()
+
+            $isPrerelease = -not [string]::IsNullOrWhiteSpace($Prerelease)
+            $versionObj = [version]$Version
+
+            return [Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]$ctor.Invoke(@(
+                    $metadata,
+                    $null,
+                    $null,
+                    $null,
+                    $deps,
+                    $null,
+                    $null,
+                    $includes,
+                    $null,
+                    $null,
+                    $isPrerelease,
+                    $null,
+                    $Name,
+                    '3.0.0',
+                    $Prerelease,
+                    $null,
+                    $null,
+                    $null,
+                    $Repository,
+                    $null,
+                    [string[]]@(),
+                    [Microsoft.PowerShell.PSResourceGet.UtilClasses.ResourceType]::Module,
+                    $null,
+                    $versionObj
+                ))
+        }
+    }
 }
 
 Describe 'ConvertTo-NormalizedVersionString' {
@@ -423,75 +490,6 @@ Describe 'Get-InstalledPSLResource' {
 }
 
 Describe 'Install-PSLResource' {
-    BeforeAll {
-        InModuleScope pslrm {
-            Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
-
-            function script:New-TestPSResourceInfo {
-                [CmdletBinding()]
-                param(
-                    [Parameter(Mandatory)]
-                    [ValidateNotNullOrEmpty()]
-                    [string] $Name,
-
-                    [Parameter(Mandatory)]
-                    [ValidateNotNullOrEmpty()]
-                    [string] $Version,
-
-                    [Parameter()]
-                    [AllowNull()]
-                    [string] $Prerelease,
-
-                    [Parameter()]
-                    [ValidateNotNullOrEmpty()]
-                    [string] $Repository = 'PSGallery'
-                )
-
-                $type = [Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]
-                $flags = [System.Reflection.BindingFlags]'Instance,NonPublic'
-                $ctor = $type.GetConstructors($flags) | Where-Object { $_.GetParameters().Count -eq 24 } | Select-Object -First 1
-                if ($null -eq $ctor) {
-                    throw 'Failed to locate a non-public PSResourceInfo constructor for tests.'
-                }
-
-                $includesType = [Microsoft.PowerShell.PSResourceGet.UtilClasses.ResourceIncludes]
-                $includes = [System.Activator]::CreateInstance($includesType, $true)
-                $deps = [Microsoft.PowerShell.PSResourceGet.UtilClasses.Dependency[]]@()
-                $metadata = [System.Collections.Generic.Dictionary[string, string]]::new()
-
-                $isPrerelease = -not [string]::IsNullOrWhiteSpace($Prerelease)
-                $versionObj = [version]$Version
-
-                return [Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]$ctor.Invoke(@(
-                        $metadata,
-                        $null,
-                        $null,
-                        $null,
-                        $deps,
-                        $null,
-                        $null,
-                        $includes,
-                        $null,
-                        $null,
-                        $isPrerelease,
-                        $null,
-                        $Name,
-                        '3.0.0',
-                        $Prerelease,
-                        $null,
-                        $null,
-                        $null,
-                        $Repository,
-                        $null,
-                        [string[]]@(),
-                        [Microsoft.PowerShell.PSResourceGet.UtilClasses.ResourceType]::Module,
-                        $null,
-                        $versionObj
-                    ))
-            }
-        }
-    }
-
     It 'calls Save-PSResource via wrapper, writes lockfile, and outputs direct resources by default' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-install'
@@ -615,75 +613,6 @@ Describe 'Install-PSLResource' {
 }
 
 Describe 'Update-PSLResource' {
-    BeforeAll {
-        InModuleScope pslrm {
-            Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
-
-            function script:New-TestPSResourceInfo {
-                [CmdletBinding()]
-                param(
-                    [Parameter(Mandatory)]
-                    [ValidateNotNullOrEmpty()]
-                    [string] $Name,
-
-                    [Parameter(Mandatory)]
-                    [ValidateNotNullOrEmpty()]
-                    [string] $Version,
-
-                    [Parameter()]
-                    [AllowNull()]
-                    [string] $Prerelease,
-
-                    [Parameter()]
-                    [ValidateNotNullOrEmpty()]
-                    [string] $Repository = 'PSGallery'
-                )
-
-                $type = [Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]
-                $flags = [System.Reflection.BindingFlags]'Instance,NonPublic'
-                $ctor = $type.GetConstructors($flags) | Where-Object { $_.GetParameters().Count -eq 24 } | Select-Object -First 1
-                if ($null -eq $ctor) {
-                    throw 'Failed to locate a non-public PSResourceInfo constructor for tests.'
-                }
-
-                $includesType = [Microsoft.PowerShell.PSResourceGet.UtilClasses.ResourceIncludes]
-                $includes = [System.Activator]::CreateInstance($includesType, $true)
-                $deps = [Microsoft.PowerShell.PSResourceGet.UtilClasses.Dependency[]]@()
-                $metadata = [System.Collections.Generic.Dictionary[string, string]]::new()
-
-                $isPrerelease = -not [string]::IsNullOrWhiteSpace($Prerelease)
-                $versionObj = [version]$Version
-
-                return [Microsoft.PowerShell.PSResourceGet.UtilClasses.PSResourceInfo]$ctor.Invoke(@(
-                        $metadata,
-                        $null,
-                        $null,
-                        $null,
-                        $deps,
-                        $null,
-                        $null,
-                        $includes,
-                        $null,
-                        $null,
-                        $isPrerelease,
-                        $null,
-                        $Name,
-                        '3.0.0',
-                        $Prerelease,
-                        $null,
-                        $null,
-                        $null,
-                        $Repository,
-                        $null,
-                        [string[]]@(),
-                        [Microsoft.PowerShell.PSResourceGet.UtilClasses.ResourceType]::Module,
-                        $null,
-                        $versionObj
-                    ))
-            }
-        }
-    }
-
     It 'recreates lockfile and outputs direct resources by default' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-update'
@@ -749,6 +678,79 @@ Describe 'Update-PSLResource' {
             Mock Invoke-SavePSResource -ModuleName pslrm { throw 'should not be called' }
 
             { Update-PSLResource -Path $root } | Should -Throw
+        }
+    }
+}
+
+Describe 'Uninstall-PSLResource' {
+    It 'removes target from requirements and recreates lock/store from remaining resources' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-uninstall-one'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{
+                A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' }
+                B = @{ Version = '[2.0.0,3.0.0)'; Repository = 'PSGallery' }
+            }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            # Seed artifacts to ensure uninstall clears store and rebuilds from remaining requirements.
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ A = @{ Version = '1.1.1'; Repository = 'PSGallery' } }
+            $store = Join-Path $root '.pslrm'
+            New-Item -ItemType Directory -Path (Join-Path $store 'stale') -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $store 'stale\old.txt'), 'old', [System.Text.UTF8Encoding]::new($false))
+
+            $saved = @(
+                (New-TestPSResourceInfo -Name 'B' -Version '2.3.4' -Prerelease $null -Repository 'PSGallery')
+            )
+            Mock Invoke-SavePSResource -ModuleName pslrm { return $saved }
+
+            $actual = @(Uninstall-PSLResource -Path $root -Name 'A')
+
+            $reqAfter = Import-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1')
+            $reqAfter.Keys | Should -Be @('B')
+
+            $lockAfter = Read-Lockfile -Path (Join-Path $root 'psreq.lock.psd1')
+            $lockAfter.Keys | Should -Be @('B')
+            $lockAfter['B']['Version'] | Should -BeExactly '2.3.4'
+
+            Test-Path -LiteralPath (Join-Path $store 'stale\old.txt') | Should -BeFalse
+
+            ($actual | ForEach-Object Name) | Should -Be @('B')
+        }
+    }
+
+    It 'writes empty lockfile when all requirements are removed' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-uninstall-all'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            Mock Invoke-SavePSResource -ModuleName pslrm { throw 'should not be called' }
+
+            $actual = @(Uninstall-PSLResource -Path $root -Name 'A')
+
+            $reqAfter = Import-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1')
+            $reqAfter.Count | Should -Be 0
+
+            $lockAfter = Read-Lockfile -Path (Join-Path $root 'psreq.lock.psd1')
+            $lockAfter.Count | Should -Be 0
+
+            $actual.Count | Should -Be 0
+        }
+    }
+
+    It 'errors when target requirement does not exist' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-uninstall-missing'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            { Uninstall-PSLResource -Path $root -Name 'Missing' } | Should -Throw
         }
     }
 }
