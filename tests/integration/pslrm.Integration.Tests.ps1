@@ -1,18 +1,18 @@
-Describe 'Integration: Install-PSLResource (Save-PSResource real)' {
-    BeforeAll {
-        $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
-        Import-Module $modulePath -Force
+BeforeAll {
+    $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
+    Import-Module $modulePath -Force
 
-        Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
+    Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
 
-        $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
-        if ($repo.PSObject.Properties.Name -contains 'Trusted') {
-            if (-not [bool]$repo.Trusted) {
-                throw 'PSGallery is not trusted. Trust it before running integration tests.'
-            }
+    $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
+    if ($repo.PSObject.Properties.Name -contains 'Trusted') {
+        if (-not [bool]$repo.Trusted) {
+            throw 'PSGallery is not trusted. Trust it before running integration tests.'
         }
     }
+}
 
+Describe 'Integration: Install-PSLResource (Save-PSResource real)' {
     It 'installs a resource and writes lockfile' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-integration-install'
@@ -52,20 +52,6 @@ Describe 'Integration: Install-PSLResource (Save-PSResource real)' {
 }
 
 Describe 'Integration: Update-PSLResource (Save-PSResource real)' {
-    BeforeAll {
-        $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
-        Import-Module $modulePath -Force
-
-        Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
-
-        $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
-        if ($repo.PSObject.Properties.Name -contains 'Trusted') {
-            if (-not [bool]$repo.Trusted) {
-                throw 'PSGallery is not trusted. Trust it before running integration tests.'
-            }
-        }
-    }
-
     It 'updates from requirements and rewrites lockfile' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-integration-update'
@@ -109,20 +95,6 @@ Describe 'Integration: Update-PSLResource (Save-PSResource real)' {
 }
 
 Describe 'Integration: Uninstall-PSLResource' {
-    BeforeAll {
-        $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
-        Import-Module $modulePath -Force
-
-        Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
-
-        $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
-        if ($repo.PSObject.Properties.Name -contains 'Trusted') {
-            if (-not [bool]$repo.Trusted) {
-                throw 'PSGallery is not trusted. Trust it before running integration tests.'
-            }
-        }
-    }
-
     It 'removes a direct dependency and rewrites requirements/lock/store' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-integration-uninstall'
@@ -163,20 +135,6 @@ Describe 'Integration: Uninstall-PSLResource' {
 }
 
 Describe 'Integration: Restore-PSLResource' {
-    BeforeAll {
-        $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
-        Import-Module $modulePath -Force
-
-        Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
-
-        $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
-        if ($repo.PSObject.Properties.Name -contains 'Trusted') {
-            if (-not [bool]$repo.Trusted) {
-                throw 'PSGallery is not trusted. Trust it before running integration tests.'
-            }
-        }
-    }
-
     It 'restores multiple modules from lockfile and clears stale store content' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-integration-restore'
