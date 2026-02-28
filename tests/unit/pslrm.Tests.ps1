@@ -754,3 +754,90 @@ Describe 'Uninstall-PSLResource' {
         }
     }
 }
+
+Describe 'Restore-PSLResource' {
+    It 'errors when the lockfile is missing' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-restore-missing-lock'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            { Restore-PSLResource -Path $root } | Should -Throw
+        }
+    }
+
+    It 'clears existing store and restores resources from lockfile' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-restore'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $lock = @{
+                A = @{ Version = '1.2.3'; Repository = 'PSGallery' }
+                Dep = @{ Version = '9.9.9'; Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data $lock
+
+            $store = Join-Path $root '.pslrm'
+            New-Item -ItemType Directory -Path (Join-Path $store 'stale') -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $store 'stale\old.txt'), 'old', [System.Text.UTF8Encoding]::new($false))
+
+            Mock Invoke-SavePSResource -ModuleName pslrm {
+                param([string] $Name, [string] $Version, [switch] $Prerelease, [string] $Repository, [string] $Path)
+                if (-not $script:capturedCalls) {
+                    $script:capturedCalls = [System.Collections.Generic.List[object]]::new()
+                }
+                $script:capturedCalls.Add([pscustomobject]@{
+                        Name = $Name
+                        Version = $Version
+                        Prerelease = [bool]$Prerelease
+                        Repository = $Repository
+                        Path = $Path
+                    })
+                return @()
+            }
+
+            $script:capturedCalls = [System.Collections.Generic.List[object]]::new()
+            $actual = @(Restore-PSLResource -Path $root)
+
+            Test-Path -LiteralPath (Join-Path $store 'stale\old.txt') | Should -BeFalse
+
+            $script:capturedCalls.Count | Should -Be 2
+            ($script:capturedCalls | ForEach-Object Name) | Should -Be @('A', 'Dep')
+            ($script:capturedCalls | ForEach-Object Version) | Should -Be @('1.2.3', '9.9.9')
+            ($script:capturedCalls | ForEach-Object Repository | Select-Object -Unique) | Should -Be @('PSGallery')
+            ($script:capturedCalls | ForEach-Object Path | Select-Object -Unique) | Should -Be @(Join-Path $root '.pslrm')
+
+            ($actual | ForEach-Object Name) | Should -Be @('A')
+            $actual[0].IsDirect | Should -BeTrue
+            $actual[0].ProjectRoot | Should -BeExactly $root
+        }
+    }
+
+    It 'outputs dependencies when -IncludeDependencies is specified' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-restore-deps'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $lock = @{
+                A = @{ Version = '1.2.3'; Repository = 'PSGallery' }
+                Dep = @{ Version = '9.9.9'; Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data $lock
+
+            Mock Invoke-SavePSResource -ModuleName pslrm { return @() }
+
+            $actual = @(Restore-PSLResource -Path $root -IncludeDependencies)
+
+            ($actual | ForEach-Object Name) | Should -Be @('A', 'Dep')
+            ($actual | Where-Object Name -EQ 'Dep').IsDirect | Should -BeFalse
+        }
+    }
+}

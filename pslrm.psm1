@@ -781,9 +781,52 @@ function Uninstall-PSLResource {
     ConvertTo-PSLRMResourcesFromLockData -LockData $lockData -DirectNames $directNames -IncludeDependencies $false -ProjectRoot $projectRoot
 }
 
+function Restore-PSLResource {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([PSLRMResource])]
+    param(
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path = (Get-Location).Path,
+
+        [Parameter()]
+        [switch] $IncludeDependencies
+    )
+
+    $projectRoot = Find-ProjectRoot -Path $Path
+    $requirementsPath = Get-RequirementsPath -ProjectRoot $projectRoot
+    $lockfilePath = Get-LockfilePath -ProjectRoot $projectRoot
+    $storePath = Get-StorePath -ProjectRoot $projectRoot
+
+    $requirements = Import-PowerShellDataFile -Path $requirementsPath
+    if ($requirements -isnot [hashtable]) {
+        throw "Requirements file must be a hashtable: $requirementsPath"
+    }
+    Assert-RequirementsAreSupported -Requirements $requirements -RequirementsPath $requirementsPath
+    $directNames = [string[]]$requirements.Keys
+
+    $lockData = Read-Lockfile -Path $lockfilePath
+
+    if (-not $PSCmdlet.ShouldProcess($projectRoot, 'Restore project-local resources from lockfile')) {
+        return
+    }
+
+    if (Test-Path -LiteralPath $storePath) {
+        if (Test-Path -LiteralPath $storePath -PathType Leaf) {
+            throw "Store path must be a directory: $storePath"
+        }
+        Remove-Item -LiteralPath $storePath -Recurse -Force
+    }
+
+    Save-LockDataToStore -LockData $lockData -StorePath $storePath
+
+    ConvertTo-PSLRMResourcesFromLockData -LockData $lockData -DirectNames $directNames -IncludeDependencies ([bool]$IncludeDependencies) -ProjectRoot $projectRoot
+}
+
 Export-ModuleMember -Function @(
     'Get-InstalledPSLResource',
     'Install-PSLResource',
     'Update-PSLResource',
-    'Uninstall-PSLResource'
+    'Uninstall-PSLResource',
+    'Restore-PSLResource'
 )

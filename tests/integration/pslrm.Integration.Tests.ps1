@@ -161,3 +161,69 @@ Describe 'Integration: Uninstall-PSLResource' {
         }
     }
 }
+
+Describe 'Integration: Restore-PSLResource' {
+    BeforeAll {
+        $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
+        Import-Module $modulePath -Force
+
+        Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
+
+        $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
+        if ($repo.PSObject.Properties.Name -contains 'Trusted') {
+            if (-not [bool]$repo.Trusted) {
+                throw 'PSGallery is not trusted. Trust it before running integration tests.'
+            }
+        }
+    }
+
+    It 'restores multiple modules from lockfile and clears stale store content' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-integration-restore'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{
+                'Get-GzipContent' = @{ Repository = 'PSGallery' }
+                'InvokeBuild' = @{ Repository = 'PSGallery' }
+            }
+            $reqPath = Join-Path $root 'psreq.psd1'
+            $lockPath = Join-Path $root 'psreq.lock.psd1'
+            $storePath = Join-Path $root '.pslrm'
+
+            Write-PowerShellDataFile -Path $reqPath -Data $req
+
+            $installed = @(Install-PSLResource -Path $root -Confirm:$false)
+            $installed.Count | Should -Be 2
+            ($installed | ForEach-Object Name) | Should-BeEquivalent @('Get-GzipContent', 'InvokeBuild')
+
+            Test-Path -LiteralPath $lockPath | Should -BeTrue
+            Test-Path -LiteralPath $storePath | Should -BeTrue
+
+            New-Item -ItemType Directory -Path (Join-Path $storePath 'stale') -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $storePath 'stale\old.txt'), 'old', [System.Text.UTF8Encoding]::new($false))
+
+            $actual = @(Restore-PSLResource -Path $root -Confirm:$false)
+
+            $actual.Count | Should -Be 2
+            ($actual | ForEach-Object Name) | Should-BeEquivalent @('Get-GzipContent', 'InvokeBuild')
+            ($actual | ForEach-Object IsDirect | Select-Object -Unique) | Should -Be @($true)
+            ($actual | ForEach-Object ProjectRoot | Select-Object -Unique) | Should -Be @($root)
+
+            Test-Path -LiteralPath (Join-Path $storePath 'stale\old.txt') | Should -BeFalse
+            Test-Path -LiteralPath $storePath | Should -BeTrue
+            @(Get-ChildItem -LiteralPath $storePath -Recurse -File -ErrorAction Stop).Count | Should -BeGreaterThan 0
+
+            $lock = Read-Lockfile -Path $lockPath
+            $lock.Keys | Should -Contain 'Get-GzipContent'
+            $lock.Keys | Should -Contain 'InvokeBuild'
+
+            Write-Host "Lockfile content at ${lockPath}:" -ForegroundColor DarkGray
+            Get-Content $lockPath | Write-Host -ForegroundColor DarkGray
+
+            Write-Host "Store content at ${storePath}:" -ForegroundColor DarkGray
+            Get-ChildItem -LiteralPath $storePath -Recurse -File | ForEach-Object {
+                Write-Host $_.FullName -ForegroundColor DarkGray
+            }
+        }
+    }
+}
