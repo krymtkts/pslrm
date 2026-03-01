@@ -1,8 +1,6 @@
 BeforeAll {
-    $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
+    $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psd1'
     Import-Module $modulePath -Force
-
-    Import-Module Microsoft.PowerShell.PSResourceGet -ErrorAction Stop
 
     $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
     if ($repo.PSObject.Properties.Name -contains 'Trusted') {
