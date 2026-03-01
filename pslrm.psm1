@@ -14,11 +14,3 @@ foreach ($relativePath in $filesToLoad) {
 
     . $filePath
 }
-
-Export-ModuleMember -Function @(
-    'Get-InstalledPSLResource',
-    'Install-PSLResource',
-    'Update-PSLResource',
-    'Uninstall-PSLResource',
-    'Restore-PSLResource'
-)
