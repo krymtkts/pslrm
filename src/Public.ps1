@@ -1,6 +1,6 @@
 function Get-InstalledPSLResource {
     [CmdletBinding()]
-    [OutputType([PSLRMResource])]
+    [OutputType([object])]
     param(
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -25,7 +25,7 @@ function Get-InstalledPSLResource {
     $names = [string[]]$lock.Keys
     [System.Array]::Sort($names, [System.StringComparer]::Ordinal)
 
-    $result = [System.Collections.Generic.List[PSLRMResource]]::new()
+    $result = [System.Collections.Generic.List[object]]::new()
     foreach ($name in $names) {
         $entry = $lock[$name]
         if ($entry -isnot [hashtable]) {
@@ -50,7 +50,7 @@ function Get-InstalledPSLResource {
 
 function Install-PSLResource {
     [CmdletBinding(SupportsShouldProcess)]
-    [OutputType([PSLRMResource])]
+    [OutputType([object])]
     param(
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -70,7 +70,7 @@ function Install-PSLResource {
 
 function Update-PSLResource {
     [CmdletBinding(SupportsShouldProcess)]
-    [OutputType([PSLRMResource])]
+    [OutputType([object])]
     param(
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -90,7 +90,7 @@ function Update-PSLResource {
 
 function Uninstall-PSLResource {
     [CmdletBinding(SupportsShouldProcess)]
-    [OutputType([PSLRMResource])]
+    [OutputType([object])]
     param(
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -155,7 +155,7 @@ function Uninstall-PSLResource {
 
 function Restore-PSLResource {
     [CmdletBinding(SupportsShouldProcess)]
-    [OutputType([PSLRMResource])]
+    [OutputType([object])]
     param(
         [Parameter()]
         [ValidateNotNullOrEmpty()]

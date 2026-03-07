@@ -3,6 +3,7 @@ Set-StrictMode -Version Latest
 $script:PSLRMRequirementsFileName = 'psreq.psd1'
 $script:PSLRMLockfileFileName = 'psreq.lock.psd1'
 $script:PSLRMStoreDirectoryName = '.pslrm'
+$script:PSLRMResourceTypeName = 'PSLRM.Resource'
 
 # Internal helpers
 
@@ -40,30 +41,6 @@ function Get-StorePath {
     )
 
     Join-Path $ProjectRoot $script:PSLRMStoreDirectoryName
-}
-
-class PSLRMResource {
-    [string] $Name
-    [string] $Version
-    [string] $Repository
-    [bool] $IsDirect
-    [string] $ProjectRoot
-
-    PSLRMResource(
-        [string] $Name,
-        [string] $Version,
-        [string] $Repository,
-        [bool] $IsDirect,
-        [string] $ProjectRoot
-    ) {
-        $this.Name = $Name
-        $this.Version = $Version
-        $this.Repository = $Repository
-        $this.IsDirect = $IsDirect
-        $this.ProjectRoot = $ProjectRoot
-
-        $this.PSObject.TypeNames.Insert(0, 'PSLRM.Resource')
-    }
 }
 
 function ConvertTo-NormalizedVersionString {
@@ -293,9 +270,45 @@ function Find-ProjectRoot {
     throw "Project root not found. Missing psreq.psd1 from: $Path"
 }
 
+function New-PSLRMResourceObject {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Name,
+
+        [Parameter()]
+        [AllowNull()]
+        [string] $Version,
+
+        [Parameter()]
+        [AllowNull()]
+        [string] $Repository,
+
+        [Parameter(Mandatory)]
+        [bool] $IsDirect,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProjectRoot
+    )
+
+    $resource = [pscustomobject][ordered]@{
+        Name = $Name
+        Version = $Version
+        Repository = $Repository
+        IsDirect = $IsDirect
+        ProjectRoot = $ProjectRoot
+    }
+
+    $resource.PSObject.TypeNames.Insert(0, $script:PSLRMResourceTypeName)
+    $resource
+}
+
 function New-Resource {
     [CmdletBinding()]
-    [OutputType([PSLRMResource])]
+    [OutputType([object])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -322,7 +335,8 @@ function New-Resource {
     )
 
     $normalizedVersion = ConvertTo-NormalizedVersionString -Version $Version -Prerelease $Prerelease
-    [PSLRMResource]::new($Name, $normalizedVersion, $Repository, $IsDirect, $ProjectRoot)
+
+    New-PSLRMResourceObject -Name $Name -Version $normalizedVersion -Repository $Repository -IsDirect $IsDirect -ProjectRoot $ProjectRoot
 }
 
 function Get-LockfileResourceNames {

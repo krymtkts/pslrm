@@ -162,7 +162,7 @@ function Resolve-RequirementsToLockData {
 
 function ConvertTo-PSLRMResourcesFromLockData {
     [CmdletBinding()]
-    [OutputType([PSLRMResource])]
+    [OutputType([object])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -183,7 +183,7 @@ function ConvertTo-PSLRMResourcesFromLockData {
     $names = [string[]]$LockData.Keys
     [System.Array]::Sort($names, [System.StringComparer]::Ordinal)
 
-    $result = [System.Collections.Generic.List[PSLRMResource]]::new()
+    $result = [System.Collections.Generic.List[object]]::new()
     foreach ($name in $names) {
         $isDirect = $DirectNames -contains $name
         if ($IncludeDependencies -or $isDirect) {
@@ -252,7 +252,7 @@ function Save-LockDataToStore {
 
 function Invoke-InstallOrUpdateCore {
     [CmdletBinding()]
-    [OutputType([PSLRMResource])]
+    [OutputType([object])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
