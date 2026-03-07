@@ -514,6 +514,88 @@ function Invoke-PSLResourceRunspaceCommand {
     & $CommandName @namedArguments @remainingArguments
 }
 
+function New-PSLResourceDataAddedSubscription {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [object] $Collection,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [object] $Queue
+    )
+
+    $handler = [System.EventHandler[System.Management.Automation.DataAddedEventArgs]] {
+        param($sender, $eventArgs)
+
+        $null = $Queue.Enqueue($sender[$eventArgs.Index])
+    }
+
+    $Collection.add_DataAdded($handler)
+
+    [pscustomobject]@{
+        Collection = $Collection
+        Handler = $handler
+    }
+}
+
+function Remove-PSLResourceDataAddedSubscription {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [pscustomobject] $Subscription
+    )
+
+    if ($null -eq $Subscription) {
+        return
+    }
+
+    if (($null -ne $Subscription.Collection) -and ($null -ne $Subscription.Handler)) {
+        $Subscription.Collection.remove_DataAdded($Subscription.Handler)
+    }
+}
+
+function Invoke-PSLResourceQueuedStreamDrain {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [pscustomobject[]] $Forwarders,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [object] $ErrorQueue,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [System.Collections.Generic.List[System.Management.Automation.ErrorRecord]] $ErrorRecords
+    )
+
+    do {
+        $drainedAny = $false
+
+        foreach ($forwarder in $Forwarders) {
+            $record = $null
+
+            while ($forwarder.Queue.TryDequeue([ref]$record)) {
+                $drainedAny = $true
+                & $forwarder.Action $record
+                $record = $null
+            }
+        }
+
+        $errorRecord = $null
+        while ($ErrorQueue.TryDequeue([ref]$errorRecord)) {
+            $drainedAny = $true
+            $ErrorRecords.Add($errorRecord) | Out-Null
+            $errorRecord = $null
+        }
+    } while ($drainedAny)
+}
+
 function Invoke-PSLResourceInIsolatedRunspace {
     [CmdletBinding()]
     [OutputType([object])]
@@ -567,6 +649,10 @@ function Invoke-PSLResourceInIsolatedRunspace {
     $runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($initialSessionState)
     $runspace.Open()
 
+    $outputCollection = $null
+    $streamForwarders = @()
+    $errorSubscription = $null
+
     try {
         $powerShell = [System.Management.Automation.PowerShell]::Create()
         $powerShell.Runspace = $runspace
@@ -577,28 +663,93 @@ function Invoke-PSLResourceInIsolatedRunspace {
         $powerShell = $powerShell.AddParameter('CommandName', $CommandName)
         $powerShell = $powerShell.AddParameter('Arguments', $Arguments)
 
-        $result = $powerShell.Invoke()
+        $outputCollection = [System.Management.Automation.PSDataCollection[psobject]]::new()
+        $inputCollection = [System.Management.Automation.PSDataCollection[psobject]]::new()
+        $inputCollection.Complete()
 
-        foreach ($record in $powerShell.Streams.Debug) {
-            $PSCmdlet.WriteDebug($record.Message)
-        }
-        foreach ($record in $powerShell.Streams.Verbose) {
-            $PSCmdlet.WriteVerbose($record.Message)
-        }
-        foreach ($record in $powerShell.Streams.Warning) {
-            $PSCmdlet.WriteWarning($record.Message)
-        }
-        foreach ($record in $powerShell.Streams.Information) {
-            $PSCmdlet.WriteInformation($record)
+        $streamForwarders = @(
+            [pscustomobject]@{
+                Collection = $outputCollection
+                Queue = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
+                Action = { param($record) $PSCmdlet.WriteObject($record) }
+                Subscription = $null
+            }
+            [pscustomobject]@{
+                Collection = $powerShell.Streams.Debug
+                Queue = [System.Collections.Concurrent.ConcurrentQueue[System.Management.Automation.DebugRecord]]::new()
+                Action = { param($record) $PSCmdlet.WriteDebug($record.Message) }
+                Subscription = $null
+            }
+            [pscustomobject]@{
+                Collection = $powerShell.Streams.Verbose
+                Queue = [System.Collections.Concurrent.ConcurrentQueue[System.Management.Automation.VerboseRecord]]::new()
+                Action = { param($record) $PSCmdlet.WriteVerbose($record.Message) }
+                Subscription = $null
+            }
+            [pscustomobject]@{
+                Collection = $powerShell.Streams.Warning
+                Queue = [System.Collections.Concurrent.ConcurrentQueue[System.Management.Automation.WarningRecord]]::new()
+                Action = { param($record) $PSCmdlet.WriteWarning($record.Message) }
+                Subscription = $null
+            }
+            [pscustomobject]@{
+                Collection = $powerShell.Streams.Information
+                Queue = [System.Collections.Concurrent.ConcurrentQueue[System.Management.Automation.InformationRecord]]::new()
+                Action = { param($record) $PSCmdlet.WriteInformation($record) }
+                Subscription = $null
+            }
+            [pscustomobject]@{
+                Collection = $powerShell.Streams.Progress
+                Queue = [System.Collections.Concurrent.ConcurrentQueue[System.Management.Automation.ProgressRecord]]::new()
+                Action = { param($record) $PSCmdlet.WriteProgress($record) }
+                Subscription = $null
+            }
+        )
+
+        $errorQueue = [System.Collections.Concurrent.ConcurrentQueue[System.Management.Automation.ErrorRecord]]::new()
+        $errorRecords = [System.Collections.Generic.List[System.Management.Automation.ErrorRecord]]::new()
+
+        foreach ($forwarder in $streamForwarders) {
+            $forwarder.Subscription = New-PSLResourceDataAddedSubscription -Collection $forwarder.Collection -Queue $forwarder.Queue
         }
 
-        if ($powerShell.Streams.Error.Count -gt 0) {
-            throw $powerShell.Streams.Error[0]
+        $errorSubscription = New-PSLResourceDataAddedSubscription -Collection $powerShell.Streams.Error -Queue $errorQueue
+
+        $drainQueues = {
+            Invoke-PSLResourceQueuedStreamDrain -Forwarders $streamForwarders -ErrorQueue $errorQueue -ErrorRecords $errorRecords
         }
 
-        $result
+        $asyncResult = $null
+        $endInvokeError = $null
+
+        try {
+            $asyncResult = $powerShell.BeginInvoke($inputCollection, $outputCollection)
+
+            while (-not $asyncResult.AsyncWaitHandle.WaitOne(50)) {
+                & $drainQueues
+            }
+
+            $powerShell.EndInvoke($asyncResult) | Out-Null
+        }
+        catch {
+            $endInvokeError = $_
+        }
+
+        & $drainQueues
+
+        if ($errorRecords.Count -gt 0) {
+            throw $errorRecords[0]
+        }
+
+        if ($null -ne $endInvokeError) {
+            throw $endInvokeError
+        }
     }
     finally {
+        foreach ($forwarder in $streamForwarders) {
+            Remove-PSLResourceDataAddedSubscription -Subscription $forwarder.Subscription
+        }
+        Remove-PSLResourceDataAddedSubscription -Subscription $errorSubscription
         if ($null -ne $powerShell) {
             $powerShell.Dispose()
         }
