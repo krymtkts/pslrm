@@ -228,4 +228,52 @@ Describe 'Integration: Invoke-PSLResource' {
             Get-Module -Name 'Get-GzipContent' | Should -BeNullOrEmpty
         }
     }
+
+    It 'resolves relative command arguments from the project root' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-integration-invoke-relative'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{ 'Get-GzipContent' = @{ Repository = 'PSGallery' } }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $installed = @(Install-PSLResource -Path $root -Confirm:$false)
+            $installed.Count | Should -Be 1
+            $installed[0].Name | Should -BeExactly 'Get-GzipContent'
+
+            $gzipPath = Join-Path $root 'sample-relative.txt.gz'
+            $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            $fileStream = [System.IO.File]::Create($gzipPath)
+            try {
+                $gzipStream = [System.IO.Compression.GzipStream]::new($fileStream, [System.IO.Compression.CompressionMode]::Compress)
+                try {
+                    $writer = [System.IO.StreamWriter]::new($gzipStream, $utf8NoBom)
+                    try {
+                        $writer.WriteLine('gamma')
+                        $writer.Write('delta')
+                    }
+                    finally {
+                        $writer.Dispose()
+                    }
+                }
+                finally {
+                    $gzipStream.Dispose()
+                }
+            }
+            finally {
+                $fileStream.Dispose()
+            }
+
+            Push-Location $root
+            try {
+                $actual = @(Invoke-PSLResource -Path '.' -CommandName 'Get-GzipContent' -Arguments @('-Path', '.\sample-relative.txt.gz'))
+            }
+            finally {
+                Pop-Location
+            }
+
+            $actual | Should -Be @('gamma', 'delta')
+            Get-Module -Name 'Get-GzipContent' | Should -BeNullOrEmpty
+        }
+    }
 }

@@ -343,4 +343,21 @@ Describe 'Find-ProjectRoot' {
             Find-ProjectRoot -Path $nested | Should -BeExactly $root
         }
     }
+
+    It 'returns an absolute project root when the input path is relative' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-relative'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ A = @{ Version = [version]'1.0.0'; Repository = 'PSGallery' } }
+
+            Push-Location $root
+            try {
+                Find-ProjectRoot -Path '.' | Should -BeExactly $root
+            }
+            finally {
+                Pop-Location
+            }
+        }
+    }
 }

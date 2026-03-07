@@ -179,6 +179,41 @@ Export-ModuleMember -Function 'Invoke-LocalEcho'
         }
     }
 
+    It 'resolves relative paths from the project root inside the isolated runspace' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-relative-path'
+            $src = Join-Path $root 'src'
+            New-Item -ItemType Directory -Path $src -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalPathModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalPathModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            [System.IO.File]::WriteAllText(
+                (Join-Path $src 'message.txt'),
+                'relative-ok',
+                [System.Text.UTF8Encoding]::new($false)
+            )
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalPathModule' -CommandName 'Get-RelativeFileContent' -ModuleBody @'
+function Get-RelativeFileContent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path
+    )
+
+    Get-Content -LiteralPath $Path -Raw
+}
+
+Export-ModuleMember -Function 'Get-RelativeFileContent'
+'@
+
+            $actual = Invoke-PSLResource -Path $root -CommandName 'Get-RelativeFileContent' -Arguments @('-Path', '.\src\message.txt')
+
+            $actual.TrimEnd("`r", "`n") | Should -BeExactly 'relative-ok'
+        }
+    }
+
     It 'resolves commands only from local resources even when the name collides with a built-in command' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-invoke-shadow'

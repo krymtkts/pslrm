@@ -254,6 +254,8 @@ function Find-ProjectRoot {
         throw "Path not found or not a directory: $Path"
     }
 
+    $cursor = (Resolve-Path -LiteralPath $cursor).Path
+
     while ($true) {
         $requirementsPath = Get-RequirementsPath -ProjectRoot $cursor
         if (Test-Path -LiteralPath $requirementsPath) {
@@ -430,6 +432,10 @@ function Invoke-PSLResourceRunspaceCommand {
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
+        [string] $ProjectRoot,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string] $StorePath,
 
         [Parameter(Mandatory)]
@@ -444,6 +450,8 @@ function Invoke-PSLResourceRunspaceCommand {
         [AllowNull()]
         [object[]] $Arguments
     )
+
+    Set-Location -LiteralPath $ProjectRoot
 
     $separator = [string][System.IO.Path]::PathSeparator
     $currentModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
@@ -563,6 +571,7 @@ function Invoke-PSLResourceInIsolatedRunspace {
         $powerShell = [System.Management.Automation.PowerShell]::Create()
         $powerShell.Runspace = $runspace
         $powerShell = $powerShell.AddCommand('Invoke-PSLResourceRunspaceCommand')
+        $powerShell = $powerShell.AddParameter('ProjectRoot', $ProjectRoot)
         $powerShell = $powerShell.AddParameter('StorePath', $storePath)
         $powerShell = $powerShell.AddParameter('ModuleNames', $moduleNames)
         $powerShell = $powerShell.AddParameter('CommandName', $CommandName)
