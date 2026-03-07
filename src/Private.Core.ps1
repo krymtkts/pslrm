@@ -580,16 +580,16 @@ function Invoke-PSLResourceInIsolatedRunspace {
         $result = $powerShell.Invoke()
 
         foreach ($record in $powerShell.Streams.Debug) {
-            Write-Debug -Message $record.Message
+            $PSCmdlet.WriteDebug($record.Message)
         }
         foreach ($record in $powerShell.Streams.Verbose) {
-            Write-Verbose -Message $record.Message
+            $PSCmdlet.WriteVerbose($record.Message)
         }
         foreach ($record in $powerShell.Streams.Warning) {
-            Write-Warning -Message $record.Message
+            $PSCmdlet.WriteWarning($record.Message)
         }
         foreach ($record in $powerShell.Streams.Information) {
-            Write-Information -MessageData $record.MessageData -Tags $record.Tags
+            $PSCmdlet.WriteInformation($record)
         }
 
         if ($powerShell.Streams.Error.Count -gt 0) {

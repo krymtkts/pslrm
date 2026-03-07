@@ -214,6 +214,32 @@ Export-ModuleMember -Function 'Get-RelativeFileContent'
         }
     }
 
+    It 'forwards host information records without failing on reserved tags' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-write-host'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalHostModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalHostModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalHostModule' -CommandName 'Invoke-HostMessage' -ModuleBody @'
+function Invoke-HostMessage {
+    [CmdletBinding()]
+    param()
+
+    Write-Host 'hello from isolated runspace'
+    'ok'
+}
+
+Export-ModuleMember -Function 'Invoke-HostMessage'
+'@
+
+            $actual = @(Invoke-PSLResource -Path $root -CommandName 'Invoke-HostMessage' 6>&1)
+
+            $actual[-1] | Should -BeExactly 'ok'
+        }
+    }
+
     It 'resolves commands only from local resources even when the name collides with a built-in command' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-invoke-shadow'
