@@ -77,6 +77,7 @@
     FunctionsToExport = @(
         'Get-InstalledPSLResource',
         'Install-PSLResource',
+        'Invoke-PSLResource',
         'Update-PSLResource',
         'Uninstall-PSLResource',
         'Restore-PSLResource'

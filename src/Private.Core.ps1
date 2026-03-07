@@ -324,3 +324,263 @@ function New-Resource {
     $normalizedVersion = ConvertTo-NormalizedVersionString -Version $Version -Prerelease $Prerelease
     [PSLRMResource]::new($Name, $normalizedVersion, $Repository, $IsDirect, $ProjectRoot)
 }
+
+function Get-LockfileResourceNames {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [hashtable] $LockData
+    )
+
+    $names = [string[]]$LockData.Keys
+    [System.Array]::Sort($names, [System.StringComparer]::Ordinal)
+    $names
+}
+
+function ConvertTo-PSLResourceInvocationArguments {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [System.Management.Automation.CommandInfo] $Command,
+
+        [Parameter()]
+        [AllowNull()]
+        [object[]] $Arguments
+    )
+
+    $namedArguments = @{}
+    $positionalArguments = [System.Collections.Generic.List[object]]::new()
+
+    if ($null -eq $Arguments) {
+        $Arguments = @()
+    }
+
+    for ($index = 0; $index -lt $Arguments.Count; $index++) {
+        $argument = $Arguments[$index]
+
+        if (($argument -is [string]) -and $argument.StartsWith('-') -and ($argument.Length -gt 1)) {
+            $parameterName = $argument.Substring(1)
+            $parameter = $null
+
+            foreach ($candidateName in $Command.Parameters.Keys) {
+                if ($candidateName -ieq $parameterName) {
+                    $parameter = $Command.Parameters[$candidateName]
+                    $parameterName = $candidateName
+                    break
+                }
+            }
+
+            if ($null -ne $parameter) {
+                $nextIndex = $index + 1
+                $isSwitch = ($parameter.ParameterType -eq [System.Management.Automation.SwitchParameter]) -or ($parameter.ParameterType -eq [bool])
+                $hasValue = $nextIndex -lt $Arguments.Count
+
+                if ($isSwitch) {
+                    if ($hasValue -and ($Arguments[$nextIndex] -isnot [string] -or -not $Arguments[$nextIndex].StartsWith('-'))) {
+                        $namedArguments[$parameterName] = $Arguments[$nextIndex]
+                        $index++
+                    }
+                    else {
+                        $namedArguments[$parameterName] = $true
+                    }
+                }
+                else {
+                    if (-not $hasValue) {
+                        throw "Missing value for parameter '$argument'."
+                    }
+
+                    $namedArguments[$parameterName] = $Arguments[$nextIndex]
+                    $index++
+                }
+
+                continue
+            }
+        }
+
+        $positionalArguments.Add($argument)
+    }
+
+    [pscustomobject]@{
+        NamedArguments = $namedArguments
+        PositionalArguments = $positionalArguments.ToArray()
+    }
+}
+
+function Invoke-PSLResourceRunspaceCommand {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $StorePath,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [string[]] $ModuleNames,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $CommandName,
+
+        [Parameter()]
+        [AllowNull()]
+        [object[]] $Arguments
+    )
+
+    $separator = [string][System.IO.Path]::PathSeparator
+    $currentModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+    $modulePathEntries = [System.Collections.Generic.List[string]]::new()
+    $modulePathEntries.Add($StorePath)
+
+    if (-not [string]::IsNullOrWhiteSpace($currentModulePath)) {
+        foreach ($entry in ($currentModulePath -split [regex]::Escape($separator))) {
+            if ([string]::IsNullOrWhiteSpace($entry)) {
+                continue
+            }
+
+            if (-not $modulePathEntries.Contains($entry)) {
+                $modulePathEntries.Add($entry)
+            }
+        }
+    }
+
+    [Environment]::SetEnvironmentVariable('PSModulePath', ($modulePathEntries.ToArray() -join $separator), 'Process')
+
+    $importedModuleNames = [System.Collections.Generic.List[string]]::new()
+    $missingModuleNames = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($moduleName in $ModuleNames) {
+        $availableModules = @(Get-Module -ListAvailable -Name $moduleName)
+        if ($availableModules.Count -eq 0) {
+            $missingModuleNames.Add($moduleName)
+            continue
+        }
+
+        $selectedModule = $availableModules | Sort-Object Version -Descending | Select-Object -First 1
+        $importedModule = Import-Module -Name $selectedModule.Path -Force -PassThru
+        $importedModuleNames.Add($importedModule.Name)
+    }
+
+    if ($missingModuleNames.Count -gt 0) {
+        throw "Local resources missing from store: $($missingModuleNames.ToArray() -join ', '). Run Restore-PSLResource."
+    }
+
+    $commands = @(Get-Command -Name $CommandName -Module $importedModuleNames.ToArray() -All -ErrorAction SilentlyContinue)
+    $candidateModuleNames = @(
+        $commands |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) } |
+            ForEach-Object Source |
+            Sort-Object -Unique
+    )
+
+    if ($candidateModuleNames.Count -eq 0) {
+        throw "Command '$CommandName' was not found in local resources: $($importedModuleNames.ToArray() -join ', ')."
+    }
+
+    if ($candidateModuleNames.Count -gt 1) {
+        throw "Command '$CommandName' is exported by multiple local resources: $($candidateModuleNames -join ', ')."
+    }
+
+    $resolvedArguments = ConvertTo-PSLResourceInvocationArguments -Command @($commands)[0] -Arguments $Arguments
+    $namedArguments = [hashtable]$resolvedArguments.NamedArguments
+    $remainingArguments = [object[]]$resolvedArguments.PositionalArguments
+
+    & $CommandName @namedArguments @remainingArguments
+}
+
+function Invoke-PSLResourceInIsolatedRunspace {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProjectRoot,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $CommandName,
+
+        [Parameter()]
+        [AllowNull()]
+        [object[]] $Arguments
+    )
+
+    $lockfilePath = Get-LockfilePath -ProjectRoot $ProjectRoot
+    $storePath = Get-StorePath -ProjectRoot $ProjectRoot
+
+    if (-not (Test-Path -LiteralPath $storePath -PathType Container)) {
+        throw "Store path not found. Run Restore-PSLResource to recreate local resources: $storePath"
+    }
+
+    $lockData = Read-Lockfile -Path $lockfilePath
+    $moduleNames = [string[]]@(Get-LockfileResourceNames -LockData $lockData)
+    if ($moduleNames.Count -eq 0) {
+        throw "Lockfile does not contain any local resources: $lockfilePath"
+    }
+
+    if ($null -eq $Arguments) {
+        $Arguments = @()
+    }
+
+    $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    $argumentResolverDefinition = (Get-Command ConvertTo-PSLResourceInvocationArguments -CommandType Function).ScriptBlock.ToString()
+    $runspaceInvokerDefinition = (Get-Command Invoke-PSLResourceRunspaceCommand -CommandType Function).ScriptBlock.ToString()
+    $initialSessionState.Commands.Add(
+        [System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new(
+            'ConvertTo-PSLResourceInvocationArguments',
+            $argumentResolverDefinition
+        )
+    ) | Out-Null
+    $initialSessionState.Commands.Add(
+        [System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new(
+            'Invoke-PSLResourceRunspaceCommand',
+            $runspaceInvokerDefinition
+        )
+    ) | Out-Null
+
+    $runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($initialSessionState)
+    $runspace.Open()
+
+    try {
+        $powerShell = [System.Management.Automation.PowerShell]::Create()
+        $powerShell.Runspace = $runspace
+        $powerShell = $powerShell.AddCommand('Invoke-PSLResourceRunspaceCommand')
+        $powerShell = $powerShell.AddParameter('StorePath', $storePath)
+        $powerShell = $powerShell.AddParameter('ModuleNames', $moduleNames)
+        $powerShell = $powerShell.AddParameter('CommandName', $CommandName)
+        $powerShell = $powerShell.AddParameter('Arguments', $Arguments)
+
+        $result = $powerShell.Invoke()
+
+        foreach ($record in $powerShell.Streams.Debug) {
+            Write-Debug -Message $record.Message
+        }
+        foreach ($record in $powerShell.Streams.Verbose) {
+            Write-Verbose -Message $record.Message
+        }
+        foreach ($record in $powerShell.Streams.Warning) {
+            Write-Warning -Message $record.Message
+        }
+        foreach ($record in $powerShell.Streams.Information) {
+            Write-Information -MessageData $record.MessageData -Tags $record.Tags
+        }
+
+        if ($powerShell.Streams.Error.Count -gt 0) {
+            throw $powerShell.Streams.Error[0]
+        }
+
+        $result
+    }
+    finally {
+        if ($null -ne $powerShell) {
+            $powerShell.Dispose()
+        }
+        if ($null -ne $runspace) {
+            $runspace.Dispose()
+        }
+    }
+}

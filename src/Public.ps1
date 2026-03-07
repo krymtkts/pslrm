@@ -194,3 +194,33 @@ function Restore-PSLResource {
 
     ConvertTo-PSLRMResourcesFromLockData -LockData $lockData -DirectNames $directNames -IncludeDependencies ([bool]$IncludeDependencies) -ProjectRoot $projectRoot
 }
+
+function Invoke-PSLResource {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $CommandName,
+
+        [Parameter()]
+        [AllowNull()]
+        [object[]] $Arguments,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path = (Get-Location).Path,
+
+        [Parameter()]
+        [ValidateSet('IsolatedRunspace', 'InProcess')]
+        [string] $ExecutionScope = 'IsolatedRunspace'
+    )
+
+    $projectRoot = Find-ProjectRoot -Path $Path
+
+    if ($ExecutionScope -eq 'InProcess') {
+        throw "ExecutionScope 'InProcess' is not implemented yet. Use 'IsolatedRunspace'."
+    }
+
+    Invoke-PSLResourceInIsolatedRunspace -ProjectRoot $projectRoot -CommandName $CommandName -Arguments $Arguments
+}

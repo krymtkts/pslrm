@@ -3,6 +3,52 @@ BeforeAll {
     Import-Module $modulePath -Force
 
     InModuleScope pslrm {
+        function script:New-TestStoreModule {
+            [CmdletBinding()]
+            param(
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $ProjectRoot,
+
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $ModuleName,
+
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $CommandName,
+
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $ModuleBody,
+
+                [Parameter()]
+                [ValidateNotNullOrEmpty()]
+                [string] $Version = '1.0.0'
+            )
+
+            $moduleRoot = Join-Path $ProjectRoot ".pslrm\$ModuleName\$Version"
+            New-Item -ItemType Directory -Path $moduleRoot -Force | Out-Null
+
+            $manifestPath = Join-Path $moduleRoot "$ModuleName.psd1"
+            $modulePath = Join-Path $moduleRoot "$ModuleName.psm1"
+            $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+            [System.IO.File]::WriteAllText($modulePath, $ModuleBody, $utf8NoBom)
+
+            $manifestContent = @(
+                '@{'
+                "    RootModule = '$ModuleName.psm1'"
+                "    ModuleVersion = '$Version'"
+                "    GUID = '$([guid]::NewGuid())'"
+                "    FunctionsToExport = @('$CommandName')"
+                '}'
+                ''
+            ) -join "`n"
+
+            [System.IO.File]::WriteAllText($manifestPath, $manifestContent, $utf8NoBom)
+        }
+
         function script:New-TestPSResourceInfo {
             [CmdletBinding()]
             param(
@@ -67,6 +113,161 @@ BeforeAll {
         }
     }
 }
+
+Describe 'Invoke-PSLResource' {
+    It 'invokes a local command in an isolated runspace and preserves named arguments' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-success'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalEchoModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalEchoModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalEchoModule' -CommandName 'Invoke-LocalEcho' -ModuleBody @'
+function Invoke-LocalEcho {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string] $First,
+
+        [Parameter()]
+        [string] $Second
+    )
+
+    [pscustomobject]@{
+        First = $First
+        Second = $Second
+        Module = $MyInvocation.MyCommand.Module.Name
+    }
+}
+
+Export-ModuleMember -Function 'Invoke-LocalEcho'
+'@
+
+            Get-Module -Name 'LocalEchoModule' | Should -BeNullOrEmpty
+
+            $actual = Invoke-PSLResource -Path $root -CommandName 'Invoke-LocalEcho' -Arguments @('-First', 'one', '-Second', 'two')
+
+            $actual.First | Should -BeExactly 'one'
+            $actual.Second | Should -BeExactly 'two'
+            $actual.Module | Should -BeExactly 'LocalEchoModule'
+            Get-Module -Name 'LocalEchoModule' | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'resolves commands only from local resources even when the name collides with a built-in command' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-shadow'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalShadowModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalShadowModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalShadowModule' -CommandName 'Get-ChildItem' -ModuleBody @'
+function Get-ChildItem {
+    [CmdletBinding()]
+    param()
+
+    'local-shadow'
+}
+
+Export-ModuleMember -Function 'Get-ChildItem'
+'@
+
+            $actual = @(Invoke-PSLResource -Path $root -CommandName 'Get-ChildItem')
+
+            $actual | Should -Be @('local-shadow')
+        }
+    }
+
+    It 'errors when the command is not exported by any local resource' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-missing-command'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalEchoModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalEchoModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalEchoModule' -CommandName 'Invoke-LocalEcho' -ModuleBody @'
+function Invoke-LocalEcho {
+    [CmdletBinding()]
+    param()
+
+    'ok'
+}
+
+Export-ModuleMember -Function 'Invoke-LocalEcho'
+'@
+
+            { Invoke-PSLResource -Path $root -CommandName 'Missing-Command' } | Should -Throw
+        }
+    }
+
+    It 'errors when multiple local resources export the same command' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-conflict'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{
+                ConflictOne = @{ Repository = 'PSGallery' }
+                ConflictTwo = @{ Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{
+                ConflictOne = @{ Version = '1.0.0'; Repository = 'PSGallery' }
+                ConflictTwo = @{ Version = '1.0.0'; Repository = 'PSGallery' }
+            }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ConflictOne' -CommandName 'Invoke-Conflict' -ModuleBody @'
+function Invoke-Conflict {
+    [CmdletBinding()]
+    param()
+
+    'one'
+}
+
+Export-ModuleMember -Function 'Invoke-Conflict'
+'@
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ConflictTwo' -CommandName 'Invoke-Conflict' -ModuleBody @'
+function Invoke-Conflict {
+    [CmdletBinding()]
+    param()
+
+    'two'
+}
+
+Export-ModuleMember -Function 'Invoke-Conflict'
+'@
+
+            { Invoke-PSLResource -Path $root -CommandName 'Invoke-Conflict' } | Should -Throw
+        }
+    }
+
+    It 'errors when a lockfile resource is missing from the local store' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-missing-store'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ MissingStoreModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ MissingStoreModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+            New-Item -ItemType Directory -Path (Join-Path $root '.pslrm') -Force | Out-Null
+
+            { Invoke-PSLResource -Path $root -CommandName 'Invoke-Missing' } | Should -Throw
+        }
+    }
+
+    It 'errors when InProcess execution is requested' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-inprocess'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ A = @{ Repository = 'PSGallery' } }
+
+            { Invoke-PSLResource -Path $root -CommandName 'Anything' -ExecutionScope InProcess } | Should -Throw
+        }
+    }
+}
+
 Describe 'Get-InstalledPSLResource' {
     It 'lists direct resources by default and marks IsDirect' {
         InModuleScope pslrm {
