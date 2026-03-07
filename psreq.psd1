@@ -1,4 +1,10 @@
 @{
-    Pester = @{ Repository = 'PSGallery' }
-    PSScriptAnalyzer = @{ Repository = 'PSGallery' }
+    Pester = @{
+        Repository = 'PSGallery'
+        Prerelease = $true
+    }
+    PSScriptAnalyzer = @{
+        Repository = 'PSGallery'
+        Prerelease = $true
+    }
 }
