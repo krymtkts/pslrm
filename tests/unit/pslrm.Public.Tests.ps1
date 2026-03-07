@@ -114,6 +114,30 @@ BeforeAll {
     }
 }
 
+Describe 'Public manifest import' {
+    It 'allows invoking exported commands outside InModuleScope' {
+        $root = Join-Path $TestDrive 'proj-public-manifest'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+        $requirementsContent = @(
+            '@{'
+            "    'Pester' = @{"
+            "        'Repository' = 'PSGallery'"
+            '    }'
+            '}'
+            ''
+        ) -join "`n"
+
+        [System.IO.File]::WriteAllText(
+            (Join-Path $root 'psreq.psd1'),
+            $requirementsContent,
+            [System.Text.UTF8Encoding]::new($false)
+        )
+
+        { Install-PSLResource -Path $root -WhatIf } | Should -Not -Throw
+    }
+}
+
 Describe 'Invoke-PSLResource' {
     It 'invokes a local command in an isolated runspace and preserves named arguments' {
         InModuleScope pslrm {
