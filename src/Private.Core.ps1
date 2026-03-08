@@ -527,11 +527,9 @@ function New-PSLResourceDataAddedSubscription {
         [object] $Queue
     )
 
-    $handler = [System.EventHandler[System.Management.Automation.DataAddedEventArgs]] {
-        param($sender, $eventArgs)
-
-        $null = $Queue.Enqueue($sender[$eventArgs.Index])
-    }
+    $handler = [System.EventHandler[System.Management.Automation.DataAddedEventArgs]]({
+            $null = $Queue.Enqueue($args[0][$args[1].Index])
+        }.GetNewClosure())
 
     $Collection.add_DataAdded($handler)
 
@@ -571,8 +569,10 @@ function Invoke-PSLResourceQueuedStreamDrain {
 
         [Parameter(Mandatory)]
         [ValidateNotNull()]
-        [System.Collections.Generic.List[System.Management.Automation.ErrorRecord]] $ErrorRecords
+        [object] $ErrorRecords
     )
+
+    $typedErrorRecords = [System.Collections.Generic.List[System.Management.Automation.ErrorRecord]]$ErrorRecords
 
     do {
         $drainedAny = $false
@@ -590,7 +590,7 @@ function Invoke-PSLResourceQueuedStreamDrain {
         $errorRecord = $null
         while ($ErrorQueue.TryDequeue([ref]$errorRecord)) {
             $drainedAny = $true
-            $ErrorRecords.Add($errorRecord) | Out-Null
+            $typedErrorRecords.Add($errorRecord) | Out-Null
             $errorRecord = $null
         }
     } while ($drainedAny)
