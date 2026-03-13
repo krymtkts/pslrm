@@ -630,23 +630,51 @@ function Invoke-PSLResourceInIsolatedRunspace {
         $Arguments = @()
     }
 
+    # NOTE: Top-level isolated invocations need the caller host so host-aware output survives the
+    # async BeginInvoke forwarding path. Nested isolated invocations must not reuse the current
+    # runspace host, because propagating child hosts destabilizes nested build/test flows.
+    # Track nesting depth so only depth 0 reuses $Host and deeper isolated runspaces fall back to
+    # the default host created from InitialSessionState.
+    $isolatedRunspaceDepthVariableName = 'PSLRMIsolatedRunspaceDepth'
+    $isolatedRunspaceDepthVariable = $ExecutionContext.SessionState.PSVariable.Get($isolatedRunspaceDepthVariableName)
+    $isolatedRunspaceDepth = if ($null -ne $isolatedRunspaceDepthVariable) {
+        [int]$isolatedRunspaceDepthVariable.Value
+    }
+    else {
+        0
+    }
+
     $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-    $argumentResolverDefinition = (Get-Command ConvertTo-PSLResourceInvocationArguments -CommandType Function).ScriptBlock.ToString()
-    $runspaceInvokerDefinition = (Get-Command Invoke-PSLResourceRunspaceCommand -CommandType Function).ScriptBlock.ToString()
+    $argumentResolverName = 'ConvertTo-PSLResourceInvocationArguments'
+    $argumentResolverDefinition = (Get-Command $argumentResolverName -CommandType Function).ScriptBlock.ToString()
+    $runspaceInvokerName = 'Invoke-PSLResourceRunspaceCommand'
+    $runspaceInvokerDefinition = (Get-Command $runspaceInvokerName -CommandType Function).ScriptBlock.ToString()
+    $initialSessionState.Variables.Add(
+        [System.Management.Automation.Runspaces.SessionStateVariableEntry]::new(
+            $isolatedRunspaceDepthVariableName,
+            ($isolatedRunspaceDepth + 1),
+            'Current nesting depth for PSLRM isolated runspaces.'
+        )
+    ) | Out-Null
     $initialSessionState.Commands.Add(
         [System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new(
-            'ConvertTo-PSLResourceInvocationArguments',
+            $argumentResolverName,
             $argumentResolverDefinition
         )
     ) | Out-Null
     $initialSessionState.Commands.Add(
         [System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new(
-            'Invoke-PSLResourceRunspaceCommand',
+            $runspaceInvokerName,
             $runspaceInvokerDefinition
         )
     ) | Out-Null
 
-    $runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($initialSessionState)
+    $runspace = if ($isolatedRunspaceDepth -eq 0) {
+        [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($Host, $initialSessionState)
+    }
+    else {
+        [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($initialSessionState)
+    }
     $runspace.Open()
 
     $outputCollection = $null
@@ -656,7 +684,7 @@ function Invoke-PSLResourceInIsolatedRunspace {
     try {
         $powerShell = [System.Management.Automation.PowerShell]::Create()
         $powerShell.Runspace = $runspace
-        $powerShell = $powerShell.AddCommand('Invoke-PSLResourceRunspaceCommand')
+        $powerShell = $powerShell.AddCommand($runspaceInvokerName)
         $powerShell = $powerShell.AddParameter('ProjectRoot', $ProjectRoot)
         $powerShell = $powerShell.AddParameter('StorePath', $storePath)
         $powerShell = $powerShell.AddParameter('ModuleNames', $moduleNames)

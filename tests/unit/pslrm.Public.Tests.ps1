@@ -235,8 +235,138 @@ Export-ModuleMember -Function 'Invoke-HostMessage'
 '@
 
             $actual = @(Invoke-PSLResource -Path $root -CommandName 'Invoke-HostMessage' 6>&1)
+            # NOTE: write output and host information records are interleaved, so we check them together here.
+            $actual | Should -Contain 'ok'
+        }
+    }
 
-            $actual[-1] | Should -BeExactly 'ok'
+    It 'shares the caller host for top-level coverage-style host messages' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-host-aware-output'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalHostAwareModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalHostAwareModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalHostAwareModule' -CommandName 'Invoke-HostAwareOutputProbe' -ModuleBody @'
+function Invoke-HostAwareOutputProbe {
+    [CmdletBinding()]
+    param()
+
+    $script:SafeCommands = @{
+        'Write-Host' = Get-Command -Name 'Write-Host' -Module 'Microsoft.PowerShell.Utility'
+    }
+
+    function Write-HostMessage {
+        [CmdletBinding()]
+        param(
+            [Parameter(Position = 0, ValueFromPipeline = $true)]
+            [Alias('Message', 'Msg')]
+            $Object,
+
+            [ConsoleColor]
+            $ForegroundColor,
+
+            [switch]
+            $NoNewLine
+        )
+
+        process {
+            & $script:SafeCommands['Write-Host'] @PSBoundParameters
+        }
+    }
+
+    Write-HostMessage -ForegroundColor Magenta 'coverage-host-output'
+
+    'ok'
+}
+
+Export-ModuleMember -Function 'Invoke-HostAwareOutputProbe'
+'@
+
+            $actual = @(Invoke-PSLResource -Path $root -CommandName 'Invoke-HostAwareOutputProbe' 6>&1)
+
+            @(
+                $actual | Where-Object {
+                    $_ -isnot [System.Management.Automation.InformationRecord]
+                }
+            ) | Should -Contain 'ok'
+            @(
+                $actual | Where-Object {
+                    $_ -is [System.Management.Automation.InformationRecord]
+                } | ForEach-Object { [string]$_.MessageData }
+            ) | Should -Contain 'coverage-host-output'
+        }
+    }
+
+    It 'falls back to the nested runspace host for nested isolated invocations' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-nested'
+            $moduleManifestPath = Join-Path $PSScriptRoot '..\..\pslrm.psd1'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{
+                OuterModule = @{ Repository = 'PSGallery' }
+                InnerModule = @{ Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{
+                OuterModule = @{ Version = '1.0.0'; Repository = 'PSGallery' }
+                InnerModule = @{ Version = '1.0.0'; Repository = 'PSGallery' }
+            }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'InnerModule' -CommandName 'Invoke-InnerMessage' -ModuleBody @'
+function Invoke-InnerMessage {
+    [CmdletBinding()]
+    param()
+
+    Write-Host 'inner-host-output' -ForegroundColor DarkGray
+    'inner-ok'
+}
+
+Export-ModuleMember -Function 'Invoke-InnerMessage'
+'@
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'OuterModule' -CommandName 'Invoke-NestedMessage' -ModuleBody @'
+function Invoke-NestedMessage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ProjectRoot,
+
+        [Parameter(Mandatory)]
+        [string] $ModuleManifestPath
+    )
+
+    Import-Module -Name $ModuleManifestPath -Force
+
+    Write-Host 'outer-host-output' -ForegroundColor DarkGray
+    $nested = @(Invoke-PSLResource -Path $ProjectRoot -CommandName 'Invoke-InnerMessage' 6>&1)
+    $nested
+    'outer-ok'
+}
+
+Export-ModuleMember -Function 'Invoke-NestedMessage'
+'@
+
+            $actual = @(
+                Invoke-PSLResource -Path $root -CommandName 'Invoke-NestedMessage' -Arguments @(
+                    '-ProjectRoot', $root,
+                    '-ModuleManifestPath', $moduleManifestPath
+                ) 6>&1
+            )
+
+            $actual[-1] | Should -BeExactly 'outer-ok'
+            $actual | Should -Contain 'inner-ok'
+            @(
+                $actual | Where-Object {
+                    $_ -is [System.Management.Automation.InformationRecord]
+                } | ForEach-Object { [string]$_.MessageData }
+            ) | Should -Contain 'outer-host-output'
+            @(
+                $actual | Where-Object {
+                    $_ -is [System.Management.Automation.InformationRecord]
+                } | ForEach-Object { [string]$_.MessageData }
+            ) | Should -Contain 'inner-host-output'
         }
     }
 

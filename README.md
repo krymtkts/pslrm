@@ -107,6 +107,11 @@ Use update when you want to apply changes from requirements.
   PSResourceGet resolves dependencies.
 - pslrm does not attempt strict transitive dependency management.
   It records what PSResourceGet saved into the lockfile.
+- `Invoke-PSLResource` runs commands in an isolated runspace.
+  The outermost invocation shares the caller host.
+  This keeps host-aware output alive through the async isolated-runspace forwarding path.
+  Nested `Invoke-PSLResource` calls use the default nested runspace host.
+  This avoids propagating child hosts across nested isolated invocations.
 - NOTE: PSResourceGet models prerelease versions separately from `Version`.
   Example: `Version = 6.0.0` and `Prerelease = alpha5`.
   To preserve prerelease info, pslrm stores versions as normalized strings in the lockfile.
