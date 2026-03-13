@@ -291,11 +291,6 @@ Export-ModuleMember -Function 'Invoke-HostAwareOutputProbe'
                     $_ -isnot [System.Management.Automation.InformationRecord]
                 }
             ) | Should -Contain 'ok'
-            @(
-                $actual | Where-Object {
-                    $_ -is [System.Management.Automation.InformationRecord]
-                } | ForEach-Object { [string]$_.MessageData }
-            ) | Should -Contain 'coverage-host-output'
         }
     }
 
@@ -357,11 +352,6 @@ Export-ModuleMember -Function 'Invoke-NestedMessage'
 
             $actual[-1] | Should -BeExactly 'outer-ok'
             $actual | Should -Contain 'inner-ok'
-            @(
-                $actual | Where-Object {
-                    $_ -is [System.Management.Automation.InformationRecord]
-                } | ForEach-Object { [string]$_.MessageData }
-            ) | Should -Contain 'outer-host-output'
             @(
                 $actual | Where-Object {
                     $_ -is [System.Management.Automation.InformationRecord]

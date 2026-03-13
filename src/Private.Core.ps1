@@ -635,6 +635,12 @@ function Invoke-PSLResourceInIsolatedRunspace {
     # runspace host, because propagating child hosts destabilizes nested build/test flows.
     # Track nesting depth so only depth 0 reuses $Host and deeper isolated runspaces fall back to
     # the default host created from InitialSessionState.
+    #
+    # NOTE: PSHOST-tagged InformationRecords need special handling when depth 0 shares $Host.
+    # With a shared host, Write-Host is already rendered directly by that host. If PSLRM also
+    # forwards the same PSHOST record from Streams.Information, the caller sees the same host
+    # message twice. Nested isolated runspaces do not share the original caller host, so their
+    # PSHOST records still need normal information-stream forwarding.
     $isolatedRunspaceDepthVariableName = 'PSLRMIsolatedRunspaceDepth'
     $isolatedRunspaceDepthVariable = $ExecutionContext.SessionState.PSVariable.Get($isolatedRunspaceDepthVariableName)
     $isolatedRunspaceDepth = if ($null -ne $isolatedRunspaceDepthVariable) {
@@ -669,7 +675,9 @@ function Invoke-PSLResourceInIsolatedRunspace {
         )
     ) | Out-Null
 
-    $runspace = if ($isolatedRunspaceDepth -eq 0) {
+    $shareCallerHost = $isolatedRunspaceDepth -eq 0
+
+    $runspace = if ($shareCallerHost) {
         [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($Host, $initialSessionState)
     }
     else {
@@ -723,7 +731,18 @@ function Invoke-PSLResourceInIsolatedRunspace {
             [pscustomobject]@{
                 Collection = $powerShell.Streams.Information
                 Queue = [System.Collections.Concurrent.ConcurrentQueue[System.Management.Automation.InformationRecord]]::new()
-                Action = { param($record) $PSCmdlet.WriteInformation($record) }
+                Action = {
+                    param($record)
+
+                    $isHostRecord = ($null -ne $record.Tags) -and ($record.Tags -contains 'PSHOST')
+                    # NOTE: Shared-host top-level invocations already rendered this host message.
+                    # Re-forwarding the PSHOST record would duplicate the visible output.
+                    if ($shareCallerHost -and $isHostRecord) {
+                        return
+                    }
+
+                    $PSCmdlet.WriteInformation($record)
+                }
                 Subscription = $null
             }
             [pscustomobject]@{
