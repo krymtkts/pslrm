@@ -47,16 +47,37 @@ pslrm does not impose a directory structure.
   If you set `repository` in `psreq.psd1`, it must resolve to **PSGallery**.
   Otherwise, pslrm errors.
 
+## State model
+
+- `psreq.psd1`
+  Desired state for direct dependencies and version constraints.
+- `psreq.lock.psd1`
+  Resolved state for reproducible installs.
+- `./.pslrm/`
+  Materialized local resources for the current project.
+
+pslrm treats these files differently depending on the command.
+
+- `Update-PSLResource` resolves from requirements and refreshes the lockfile.
+- `Restore-PSLResource` restores from the lockfile.
+- `Install-PSLResource` is the convenience entry point:
+  - If `psreq.lock.psd1` exists, install uses the lockfile to reproduce the saved versions.
+  - If `psreq.lock.psd1` does not exist, install resolves from `psreq.psd1` and creates the lockfile.
+
+Use restore when you want a lockfile-driven restore.
+Use update when you want to apply changes from requirements.
+
 ## Commands
 
 - `Install-PSLResource`
-  Install project-local resources from `psreq.psd1`.
-  Write `psreq.lock.psd1`.
+  Install project-local resources.
+  If `psreq.lock.psd1` exists, it restores the saved versions from the lockfile.
+  If `psreq.lock.psd1` does not exist, it resolves from `psreq.psd1` and writes a new lockfile.
   By default, it outputs direct resources.
   Use `-IncludeDependencies` to output all saved resources.
 - `Update-PSLResource`
-  Update project-local resources from `psreq.psd1`.
-  Rewrite `psreq.lock.psd1`.
+  Re-resolve project-local resources from `psreq.psd1`.
+  Rewrite `psreq.lock.psd1` and refresh `./.pslrm/`.
   By default, it outputs direct resources.
   Use `-IncludeDependencies` to output all saved resources.
 - `Get-InstalledPSLResource`
@@ -67,8 +88,18 @@ pslrm does not impose a directory structure.
   If it removes all resources, it writes an empty lockfile.
 - `Restore-PSLResource`
   Restore project-local resources to match `psreq.lock.psd1`.
+  This is the explicit lockfile-driven restore command.
   If `psreq.lock.psd1` is missing, it errors.
   If `./.pslrm/` exists, it clears the directory before restore.
+
+## Command comparison
+
+| Command                 | Primary input                               | Updates `psreq.lock.psd1`     | Updates `./.pslrm/` | Intended use                                        |
+| ----------------------- | ------------------------------------------- | ----------------------------- | ------------------- | --------------------------------------------------- |
+| `Install-PSLResource`   | Lockfile if present, otherwise requirements | Only when lockfile is missing | Yes                 | Convenience command for local setup                 |
+| `Update-PSLResource`    | Requirements                                | Yes                           | Yes                 | Re-resolve dependencies after changing requirements |
+| `Restore-PSLResource`   | Lockfile                                    | No                            | Yes                 | Explicit reproducible restore, especially for CI    |
+| `Uninstall-PSLResource` | Requirements after removal                  | Yes                           | Yes                 | Remove direct dependencies from the project         |
 
 ## Notes / limitations
 
