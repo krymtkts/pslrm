@@ -361,3 +361,134 @@ Describe 'Find-ProjectRoot' {
         }
     }
 }
+
+Describe 'Test-VersionConstraintSatisfied' {
+    It 'returns true when the constraint is omitted' {
+        InModuleScope pslrm {
+            Test-VersionConstraintSatisfied -VersionConstraint $null -ResolvedVersion '1.2.3' | Should -BeTrue
+            Test-VersionConstraintSatisfied -VersionConstraint '   ' -ResolvedVersion '1.2.3' | Should -BeTrue
+        }
+    }
+
+    It 'supports exact version constraints' {
+        InModuleScope pslrm {
+            Test-VersionConstraintSatisfied -VersionConstraint '1.2.3' -ResolvedVersion '1.2.3' | Should -BeTrue
+            Test-VersionConstraintSatisfied -VersionConstraint '[1.2.3]' -ResolvedVersion '1.2.3' | Should -BeTrue
+            Test-VersionConstraintSatisfied -VersionConstraint '1.2.3' -ResolvedVersion '1.2.4' | Should -BeFalse
+        }
+    }
+
+    It 'supports inclusive and exclusive range bounds' {
+        InModuleScope pslrm {
+            Test-VersionConstraintSatisfied -VersionConstraint '[1.0.0,2.0.0)' -ResolvedVersion '1.0.0' | Should -BeTrue
+            Test-VersionConstraintSatisfied -VersionConstraint '[1.0.0,2.0.0)' -ResolvedVersion '1.9.9' | Should -BeTrue
+            Test-VersionConstraintSatisfied -VersionConstraint '[1.0.0,2.0.0)' -ResolvedVersion '2.0.0' | Should -BeFalse
+            Test-VersionConstraintSatisfied -VersionConstraint '(1.0.0,2.0.0]' -ResolvedVersion '1.0.0' | Should -BeFalse
+            Test-VersionConstraintSatisfied -VersionConstraint '(1.0.0,2.0.0]' -ResolvedVersion '2.0.0' | Should -BeTrue
+        }
+    }
+
+    It 'supports open-ended ranges' {
+        InModuleScope pslrm {
+            Test-VersionConstraintSatisfied -VersionConstraint '(,2.0.0]' -ResolvedVersion '1.9.9' | Should -BeTrue
+            Test-VersionConstraintSatisfied -VersionConstraint '(,2.0.0]' -ResolvedVersion '2.0.1' | Should -BeFalse
+            Test-VersionConstraintSatisfied -VersionConstraint '[1.5.0,)' -ResolvedVersion '1.5.0' | Should -BeTrue
+            Test-VersionConstraintSatisfied -VersionConstraint '[1.5.0,)' -ResolvedVersion '1.4.9' | Should -BeFalse
+        }
+    }
+
+    It 'treats prerelease versions as lower precedence than releases' {
+        InModuleScope pslrm {
+            Test-VersionConstraintSatisfied -VersionConstraint '[1.0.0-alpha,1.0.0)' -ResolvedVersion '1.0.0-alpha.2' | Should -BeTrue
+            Test-VersionConstraintSatisfied -VersionConstraint '[1.0.0-alpha,1.0.0)' -ResolvedVersion '1.0.0' | Should -BeFalse
+            Test-VersionConstraintSatisfied -VersionConstraint '1.0.0-alpha.1' -ResolvedVersion '1.0.0-alpha.2' | Should -BeFalse
+        }
+    }
+}
+
+Describe 'Test-LockfileDrift' {
+    It 'returns a non-drifted result for matching direct dependencies' {
+        $actual = InModuleScope pslrm {
+            $requirements = @{
+                A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' }
+            }
+            $lockData = @{
+                A = @{ Version = '1.2.3'; Repository = 'PSGallery' }
+                Dep = @{ Version = '9.9.9'; Repository = 'PSGallery' }
+            }
+
+            Test-LockfileDrift -Requirements $requirements -LockData $lockData
+        }
+
+        $actual.IsDrifted | Should -BeFalse
+        $actual.Reasons | Should -Be @()
+        $actual.MissingDirectNames | Should -Be @()
+        $actual.UnexpectedDirectNames | Should -Be @()
+    }
+
+    It 'reports missing direct dependencies' {
+        $actual = InModuleScope pslrm {
+            $requirements = @{
+                A = @{ Version = '1.2.3'; Repository = 'PSGallery' }
+                B = @{ Version = '2.3.4'; Repository = 'PSGallery' }
+            }
+            $lockData = @{
+                A = @{ Version = '1.2.3'; Repository = 'PSGallery' }
+            }
+
+            Test-LockfileDrift -Requirements $requirements -LockData $lockData
+        }
+
+        $actual.IsDrifted | Should -BeTrue
+        $actual.MissingDirectNames | Should -Be @('B')
+        $actual.Reasons | Should -Contain "Missing direct dependency in lockfile: 'B'."
+    }
+
+    It 'reports repository mismatches' {
+        $actual = InModuleScope pslrm {
+            $requirements = @{
+                A = @{ Version = '1.2.3'; Repository = 'PSGallery' }
+            }
+            $lockData = @{
+                A = @{ Version = '1.2.3'; Repository = 'OtherRepo' }
+            }
+
+            Test-LockfileDrift -Requirements $requirements -LockData $lockData
+        }
+
+        $actual.IsDrifted | Should -BeTrue
+        $actual.RepositoryMismatches | Should -Be @('A')
+    }
+
+    It 'reports prerelease violations' {
+        $actual = InModuleScope pslrm {
+            $requirements = @{
+                A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery'; Prerelease = $false }
+            }
+            $lockData = @{
+                A = @{ Version = '1.2.3-alpha.1'; Repository = 'PSGallery' }
+            }
+
+            Test-LockfileDrift -Requirements $requirements -LockData $lockData
+        }
+
+        $actual.IsDrifted | Should -BeTrue
+        $actual.PrereleaseViolations | Should -Be @('A')
+    }
+
+    It 'reports version constraint violations' {
+        $actual = InModuleScope pslrm {
+            $requirements = @{
+                A = @{ Version = '[2.0.0,3.0.0)'; Repository = 'PSGallery' }
+            }
+            $lockData = @{
+                A = @{ Version = '1.2.3'; Repository = 'PSGallery' }
+            }
+
+            Test-LockfileDrift -Requirements $requirements -LockData $lockData
+        }
+
+        $actual.IsDrifted | Should -BeTrue
+        $actual.VersionViolations | Should -Be @('A')
+    }
+}

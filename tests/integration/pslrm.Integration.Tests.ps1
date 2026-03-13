@@ -47,6 +47,34 @@ Describe 'Integration: Install-PSLResource (Save-PSResource real)' {
 
         }
     }
+
+    It 'fails on stale lockfile until Update-PSLResource refreshes it' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-integration-install-stale-lock'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $reqPath = Join-Path $root 'psreq.psd1'
+            Write-PowerShellDataFile -Path $reqPath -Data @{ 'Get-GzipContent' = @{ Repository = 'PSGallery' } }
+
+            $initialInstall = @(Install-PSLResource -Path $root -Confirm:$false)
+            $initialInstall.Count | Should -Be 1
+
+            Write-PowerShellDataFile -Path $reqPath -Data @{
+                'Get-GzipContent' = @{ Repository = 'PSGallery' }
+                'InvokeBuild' = @{ Repository = 'PSGallery' }
+            }
+
+            { Install-PSLResource -Path $root -Confirm:$false } | Should -Throw '*Update-PSLResource*'
+
+            $updated = @(Update-PSLResource -Path $root -Confirm:$false)
+
+            ($updated | ForEach-Object Name) | Should -Be @('Get-GzipContent', 'InvokeBuild')
+
+            $lock = Read-Lockfile -Path (Join-Path $root 'psreq.lock.psd1')
+            $lock.Keys | Should -Contain 'Get-GzipContent'
+            $lock.Keys | Should -Contain 'InvokeBuild'
+        }
+    }
 }
 
 Describe 'Integration: Update-PSLResource (Save-PSResource real)' {

@@ -537,6 +537,29 @@ Describe 'Install-PSLResource' {
         }
     }
 
+    It 'errors when the lockfile is stale for current requirements' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-install-stale-lock'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            $req = @{
+                A = @{ Version = '[1.0.0,2.0.0)'; Repository = 'PSGallery' }
+                B = @{ Version = '[2.0.0,3.0.0)'; Repository = 'PSGallery' }
+            }
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data $req
+
+            $lock = @{
+                A = @{ Version = '1.2.3'; Repository = 'PSGallery' }
+                Dep = @{ Version = '9.9.9'; Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data $lock
+
+            Mock Invoke-SavePSResource -ModuleName pslrm { throw 'should not be called' }
+
+            { Install-PSLResource -Path $root } | Should -Throw '*Update-PSLResource*'
+        }
+    }
+
     It 'errors when requirements specify a non-PSGallery repository' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-install-bad-repo'
