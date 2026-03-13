@@ -1,4 +1,8 @@
 @{
+    'InvokeBuild' = @{
+        'Repository' = 'PSGallery'
+        'Version' = '5.14.23'
+    }
     'PSScriptAnalyzer' = @{
         'Repository' = 'PSGallery'
         'Version' = '1.24.0'
