@@ -596,6 +596,33 @@ function Invoke-PSLResourceQueuedStreamDrain {
     } while ($drainedAny)
 }
 
+function Resolve-PSLResourceInvocationError {
+    [CmdletBinding()]
+    [OutputType([System.Management.Automation.ErrorRecord])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [System.Management.Automation.ErrorRecord] $ErrorRecord
+    )
+
+    $currentException = $ErrorRecord.Exception
+    $resolvedErrorRecord = $ErrorRecord
+
+    while ($null -ne $currentException) {
+        $errorRecordProperty = $currentException.PSObject.Properties['ErrorRecord']
+        if ($null -ne $errorRecordProperty) {
+            $innerErrorRecord = $errorRecordProperty.Value
+            if (($innerErrorRecord -is [System.Management.Automation.ErrorRecord]) -and (-not [object]::ReferenceEquals($innerErrorRecord, $ErrorRecord))) {
+                $resolvedErrorRecord = $innerErrorRecord
+            }
+        }
+
+        $currentException = $currentException.InnerException
+    }
+
+    $resolvedErrorRecord
+}
+
 function Invoke-PSLResourceInIsolatedRunspace {
     [CmdletBinding()]
     [OutputType([object])]
@@ -779,17 +806,17 @@ function Invoke-PSLResourceInIsolatedRunspace {
             $powerShell.EndInvoke($asyncResult) | Out-Null
         }
         catch {
-            $endInvokeError = $_
+            $endInvokeError = Resolve-PSLResourceInvocationError -ErrorRecord $_
         }
 
         & $drainQueues
 
         if ($errorRecords.Count -gt 0) {
-            throw $errorRecords[0]
+            $PSCmdlet.ThrowTerminatingError((Resolve-PSLResourceInvocationError -ErrorRecord $errorRecords[0]))
         }
 
         if ($null -ne $endInvokeError) {
-            throw $endInvokeError
+            $PSCmdlet.ThrowTerminatingError($endInvokeError)
         }
     }
     finally {

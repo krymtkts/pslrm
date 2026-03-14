@@ -222,5 +222,10 @@ function Invoke-PSLResource {
         throw "ExecutionScope 'InProcess' is not implemented yet. Use 'IsolatedRunspace'."
     }
 
-    Invoke-PSLResourceInIsolatedRunspace -ProjectRoot $projectRoot -CommandName $CommandName -Arguments $Arguments
+    try {
+        Invoke-PSLResourceInIsolatedRunspace -ProjectRoot $projectRoot -CommandName $CommandName -Arguments $Arguments
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
 }
