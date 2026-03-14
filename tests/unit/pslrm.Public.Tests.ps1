@@ -1,5 +1,12 @@
 BeforeAll {
-    $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psd1'
+    $moduleRoot = if (-not [string]::IsNullOrWhiteSpace($env:PSLRM_TEST_MODULE_ROOT)) {
+        $env:PSLRM_TEST_MODULE_ROOT
+    }
+    else {
+        (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    }
+
+    $modulePath = Join-Path $moduleRoot 'pslrm.psd1'
     Import-Module $modulePath -Force
 
     InModuleScope pslrm {
@@ -297,7 +304,7 @@ Export-ModuleMember -Function 'Invoke-HostAwareOutputProbe'
     It 'falls back to the nested runspace host for nested isolated invocations' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-invoke-nested'
-            $moduleManifestPath = Join-Path $PSScriptRoot '..\..\pslrm.psd1'
+            $moduleManifestPath = Get-Module 'pslrm' | Select-Object -First 1 -ExpandProperty Path
             New-Item -ItemType Directory -Path $root -Force | Out-Null
 
             Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{
@@ -405,6 +412,41 @@ Export-ModuleMember -Function 'Invoke-LocalEcho'
 '@
 
             { Invoke-PSLResource -Path $root -CommandName 'Missing-Command' } | Should -Throw
+        }
+    }
+
+    It 'surfaces the original isolated-runspace failure instead of the EndInvoke wrapper' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-inner-failure'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ BrokenModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ BrokenModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'BrokenModule' -CommandName 'Invoke-BrokenCount' -ModuleBody @'
+function Invoke-BrokenCount {
+    [CmdletBinding()]
+    param()
+
+    $item = [pscustomobject]@{ Name = 'only-name' }
+    $item | Select-Object -ExpandProperty Count -ErrorAction Stop | Out-Null
+}
+
+Export-ModuleMember -Function 'Invoke-BrokenCount'
+'@
+
+            $thrown = $null
+
+            try {
+                Invoke-PSLResource -Path $root -CommandName 'Invoke-BrokenCount'
+            }
+            catch {
+                $thrown = $_
+            }
+
+            $thrown | Should -Not -BeNullOrEmpty
+            $thrown.Exception.Message | Should -BeLike '*Count*cannot be found*'
+            $thrown.Exception.Message | Should -Not -BeLike '*Exception calling "EndInvoke"*'
         }
     }
 

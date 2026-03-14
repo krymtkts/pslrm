@@ -1,5 +1,12 @@
 BeforeAll {
-    $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psm1'
+    $moduleRoot = if (-not [string]::IsNullOrWhiteSpace($env:PSLRM_TEST_MODULE_ROOT)) {
+        $env:PSLRM_TEST_MODULE_ROOT
+    }
+    else {
+        (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    }
+
+    $modulePath = Join-Path $moduleRoot 'pslrm.psm1'
     Import-Module $modulePath -Force
 }
 Describe 'ConvertTo-NormalizedVersionString' {

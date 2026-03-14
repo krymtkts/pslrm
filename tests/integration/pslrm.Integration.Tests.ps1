@@ -1,5 +1,12 @@
 BeforeAll {
-    $modulePath = Join-Path $PSScriptRoot '..\..\pslrm.psd1'
+    $moduleRoot = if (-not [string]::IsNullOrWhiteSpace($env:PSLRM_TEST_MODULE_ROOT)) {
+        $env:PSLRM_TEST_MODULE_ROOT
+    }
+    else {
+        (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    }
+
+    $modulePath = Join-Path $moduleRoot 'pslrm.psd1'
     Import-Module $modulePath -Force
 
     $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
