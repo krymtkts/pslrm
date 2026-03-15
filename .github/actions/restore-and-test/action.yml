@@ -13,6 +13,12 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Prepare Microsoft.PowerShell.PSResourceGet for Windows PowerShell
+      shell: ${{ inputs.shell }}
+      if: inputs.shell == 'powershell'
+      run: |
+        Install-Module -Name Microsoft.PowerShell.PSResourceGet -Force -Scope CurrentUser -Repository PSGallery -SkipPublisherCheck -AllowPrerelease
+        Get-PSResourceRepository
     - name: Restore modules from PSGallery
       shell: ${{ inputs.shell }}
       run: |
