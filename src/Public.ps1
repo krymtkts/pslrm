@@ -204,8 +204,9 @@ function Invoke-PSLResource {
         [string] $CommandName,
 
         [Parameter()]
+        [Alias('Arguments')]
         [AllowNull()]
-        [object[]] $Arguments,
+        [object[]] $ArgumentTokens,
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -223,7 +224,7 @@ function Invoke-PSLResource {
     }
 
     try {
-        Invoke-PSLResourceInIsolatedRunspace -ProjectRoot $projectRoot -CommandName $CommandName -Arguments $Arguments
+        Invoke-InIsolatedRunspace -ProjectRoot $projectRoot -CommandName $CommandName -ArgumentTokens $ArgumentTokens
     }
     catch {
         $PSCmdlet.ThrowTerminatingError($_)

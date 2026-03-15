@@ -369,6 +369,46 @@ Describe 'Find-ProjectRoot' {
     }
 }
 
+Describe 'Invoke-PslrmCommandWithArgumentTokens' {
+    It 'preserves parameter-like trailing tokens in the generated invocation line' {
+        $actual = InModuleScope pslrm {
+            function Invoke-TestForwardedCommand {
+                [CmdletBinding()]
+                param(
+                    [Parameter()]
+                    [string] $Task,
+
+                    [Parameter(Position = 0)]
+                    [string] $Path,
+
+                    [Parameter(ValueFromRemainingArguments)]
+                    [object[]] $RemainingArguments
+                )
+
+                [pscustomobject]@{
+                    Line = $MyInvocation.Line.Trim()
+                    Task = $Task
+                    Path = $Path
+                    RemainingArguments = @($RemainingArguments)
+                }
+            }
+
+            Invoke-PslrmCommandWithArgumentTokens -Command (Get-Command 'Invoke-TestForwardedCommand') -ArgumentTokens @(
+                '-Task',
+                'UnitTest',
+                '.build.ps1',
+                '-DisableCoverage'
+            )
+        }
+
+        $actual.Task | Should -BeExactly 'UnitTest'
+        $actual.Path | Should -BeExactly '.build.ps1'
+        $actual.RemainingArguments | Should -Be @('-DisableCoverage')
+        $actual.Line | Should -BeLike '*-Task*$__pslrmArg0*$__pslrmArg1*-DisableCoverage*'
+        $actual.Line | Should -Not -BeLike '*@remainingArguments*'
+    }
+}
+
 Describe 'Test-VersionConstraintSatisfied' {
     It 'returns true when the constraint is omitted' {
         InModuleScope pslrm {

@@ -355,7 +355,171 @@ function Get-LockfileResourceNames {
     $names
 }
 
-function ConvertTo-PSLResourceInvocationArguments {
+function Test-PslrmParameterToken {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object] $Argument
+    )
+
+    if ($Argument -isnot [string]) {
+        return $false
+    }
+
+    if (($Argument.Length -le 1) -or -not $Argument.StartsWith('-')) {
+        return $false
+    }
+
+    if ($Argument -match '^-{1,2}\d') {
+        return $false
+    }
+
+    $Argument -match '^-{1,2}[A-Za-z_][A-Za-z0-9_-]*(?::(?:\$?true|\$?false))?$'
+}
+
+function Get-PslrmParameterTokenInfo {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ParameterToken
+    )
+
+    if (-not (Test-PslrmParameterToken -Argument $ParameterToken)) {
+        throw "Invalid parameter token: $ParameterToken"
+    }
+
+    $match = [regex]::Match(
+        $ParameterToken,
+        '^-{1,2}(?<name>[A-Za-z_][A-Za-z0-9_-]*)(?::(?<value>\$?true|\$?false))?$'
+    )
+
+    $hasInlineBooleanValue = $match.Groups['value'].Success
+    $inlineBooleanValue = $null
+    if ($hasInlineBooleanValue) {
+        $inlineBooleanValue = $match.Groups['value'].Value.TrimStart('$') -ieq 'true'
+    }
+
+    [pscustomobject]@{
+        Name = $match.Groups['name'].Value
+        HasInlineBooleanValue = $hasInlineBooleanValue
+        InlineBooleanValue = $inlineBooleanValue
+    }
+}
+
+function Get-PslrmCommandParameter {
+    [CmdletBinding()]
+    [OutputType([System.Management.Automation.ParameterMetadata])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [System.Management.Automation.CommandInfo] $Command,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ParameterToken
+    )
+
+    $parameterTokenInfo = Get-PslrmParameterTokenInfo -ParameterToken $ParameterToken
+    $parameterName = $parameterTokenInfo.Name
+
+    foreach ($candidateName in $Command.Parameters.Keys) {
+        if ($candidateName -ieq $parameterName) {
+            return $Command.Parameters[$candidateName]
+        }
+    }
+
+    $null
+}
+
+function Invoke-PslrmCommandWithArgumentTokens {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [System.Management.Automation.CommandInfo] $Command,
+
+        [Parameter()]
+        [AllowNull()]
+        [object[]] $ArgumentTokens
+    )
+
+    if ($null -eq $ArgumentTokens) {
+        $ArgumentTokens = @()
+    }
+
+    $commandVariableName = '__pslrmCmd'
+    Set-Variable -Name $commandVariableName -Value $Command.Name
+
+    $scriptParts = [System.Collections.Generic.List[string]]::new()
+    $scriptParts.Add("& `$$commandVariableName")
+
+    $expectValue = $false
+    $argumentVariableIndex = 0
+
+    for ($index = 0; $index -lt $ArgumentTokens.Count; $index++) {
+        $argument = $ArgumentTokens[$index]
+
+        if ($expectValue) {
+            $valueVariableName = "__pslrmArg$argumentVariableIndex"
+            $argumentVariableIndex++
+            Set-Variable -Name $valueVariableName -Value $argument
+            $scriptParts.Add("`$$valueVariableName")
+            $expectValue = $false
+            continue
+        }
+
+        $isParameterToken = Test-PslrmParameterToken -Argument $argument
+        if ($isParameterToken) {
+            $scriptParts.Add([string] $argument)
+
+            $parameterTokenInfo = Get-PslrmParameterTokenInfo -ParameterToken $argument
+            $parameter = Get-PslrmCommandParameter -Command $Command -ParameterToken $argument
+            if ($null -ne $parameter) {
+                if ($parameterTokenInfo.HasInlineBooleanValue) {
+                    continue
+                }
+
+                $hasNext = ($index + 1) -lt $ArgumentTokens.Count
+                if (-not $hasNext) {
+                    $parameterType = $parameter.ParameterType
+                    $isSwitch = ($parameterType -eq [System.Management.Automation.SwitchParameter]) -or ($parameterType -eq [bool])
+                    if (-not $isSwitch) {
+                        throw "Missing value for parameter '$argument'."
+                    }
+                }
+                else {
+                    $nextArgument = $ArgumentTokens[$index + 1]
+                    $nextIsParameterToken = Test-PslrmParameterToken -Argument $nextArgument
+                    $parameterType = $parameter.ParameterType
+                    $isSwitch = ($parameterType -eq [System.Management.Automation.SwitchParameter]) -or ($parameterType -eq [bool])
+
+                    if (-not $isSwitch) {
+                        $expectValue = $true
+                    }
+                    elseif (-not $nextIsParameterToken) {
+                        $expectValue = $true
+                    }
+                }
+            }
+
+            continue
+        }
+
+        $valueVariableName = "__pslrmArg$argumentVariableIndex"
+        $argumentVariableIndex++
+        Set-Variable -Name $valueVariableName -Value $argument
+        $scriptParts.Add("`$$valueVariableName")
+    }
+
+    & ([scriptblock]::Create(($scriptParts -join ' ')))
+}
+
+function ConvertTo-InvocationArguments {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param(
@@ -365,39 +529,37 @@ function ConvertTo-PSLResourceInvocationArguments {
 
         [Parameter()]
         [AllowNull()]
-        [object[]] $Arguments
+        [object[]] $ArgumentTokens
     )
 
     $namedArguments = @{}
     $positionalArguments = [System.Collections.Generic.List[object]]::new()
 
-    if ($null -eq $Arguments) {
-        $Arguments = @()
+    if ($null -eq $ArgumentTokens) {
+        $ArgumentTokens = @()
     }
 
-    for ($index = 0; $index -lt $Arguments.Count; $index++) {
-        $argument = $Arguments[$index]
+    for ($index = 0; $index -lt $ArgumentTokens.Count; $index++) {
+        $argument = $ArgumentTokens[$index]
 
-        if (($argument -is [string]) -and $argument.StartsWith('-') -and ($argument.Length -gt 1)) {
-            $parameterName = $argument.Substring(1)
-            $parameter = $null
-
-            foreach ($candidateName in $Command.Parameters.Keys) {
-                if ($candidateName -ieq $parameterName) {
-                    $parameter = $Command.Parameters[$candidateName]
-                    $parameterName = $candidateName
-                    break
-                }
-            }
+        if (Test-PslrmParameterToken -Argument $argument) {
+            $parameterTokenInfo = Get-PslrmParameterTokenInfo -ParameterToken $argument
+            $parameter = Get-PslrmCommandParameter -Command $Command -ParameterToken $argument
 
             if ($null -ne $parameter) {
+                $parameterName = $parameter.Name
                 $nextIndex = $index + 1
                 $isSwitch = ($parameter.ParameterType -eq [System.Management.Automation.SwitchParameter]) -or ($parameter.ParameterType -eq [bool])
-                $hasValue = $nextIndex -lt $Arguments.Count
+                $hasValue = $nextIndex -lt $ArgumentTokens.Count
+
+                if ($parameterTokenInfo.HasInlineBooleanValue) {
+                    $namedArguments[$parameterName] = $parameterTokenInfo.InlineBooleanValue
+                    continue
+                }
 
                 if ($isSwitch) {
-                    if ($hasValue -and ($Arguments[$nextIndex] -isnot [string] -or -not $Arguments[$nextIndex].StartsWith('-'))) {
-                        $namedArguments[$parameterName] = $Arguments[$nextIndex]
+                    if ($hasValue -and -not (Test-PslrmParameterToken -Argument $ArgumentTokens[$nextIndex])) {
+                        $namedArguments[$parameterName] = $ArgumentTokens[$nextIndex]
                         $index++
                     }
                     else {
@@ -409,7 +571,7 @@ function ConvertTo-PSLResourceInvocationArguments {
                         throw "Missing value for parameter '$argument'."
                     }
 
-                    $namedArguments[$parameterName] = $Arguments[$nextIndex]
+                    $namedArguments[$parameterName] = $ArgumentTokens[$nextIndex]
                     $index++
                 }
 
@@ -426,7 +588,7 @@ function ConvertTo-PSLResourceInvocationArguments {
     }
 }
 
-function Invoke-PSLResourceRunspaceCommand {
+function Invoke-PslrmRunspaceCommand {
     [CmdletBinding()]
     [OutputType([object])]
     param(
@@ -448,7 +610,7 @@ function Invoke-PSLResourceRunspaceCommand {
 
         [Parameter()]
         [AllowNull()]
-        [object[]] $Arguments
+        [object[]] $ArgumentTokens
     )
 
     Set-Location -LiteralPath $ProjectRoot
@@ -507,14 +669,10 @@ function Invoke-PSLResourceRunspaceCommand {
         throw "Command '$CommandName' is exported by multiple local resources: $($candidateModuleNames -join ', ')."
     }
 
-    $resolvedArguments = ConvertTo-PSLResourceInvocationArguments -Command @($commands)[0] -Arguments $Arguments
-    $namedArguments = [hashtable]$resolvedArguments.NamedArguments
-    $remainingArguments = [object[]]$resolvedArguments.PositionalArguments
-
-    & $CommandName @namedArguments @remainingArguments
+    Invoke-PslrmCommandWithArgumentTokens -Command @($commands)[0] -ArgumentTokens $ArgumentTokens
 }
 
-function New-PSLResourceDataAddedSubscription {
+function New-DataAddedSubscription {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param(
@@ -539,7 +697,7 @@ function New-PSLResourceDataAddedSubscription {
     }
 }
 
-function Remove-PSLResourceDataAddedSubscription {
+function Remove-DataAddedSubscription {
     [CmdletBinding()]
     param(
         [Parameter()]
@@ -556,7 +714,7 @@ function Remove-PSLResourceDataAddedSubscription {
     }
 }
 
-function Invoke-PSLResourceQueuedStreamDrain {
+function Invoke-QueuedStreamDrain {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -596,7 +754,7 @@ function Invoke-PSLResourceQueuedStreamDrain {
     } while ($drainedAny)
 }
 
-function Resolve-PSLResourceInvocationError {
+function Resolve-InvocationError {
     [CmdletBinding()]
     [OutputType([System.Management.Automation.ErrorRecord])]
     param(
@@ -623,7 +781,7 @@ function Resolve-PSLResourceInvocationError {
     $resolvedErrorRecord
 }
 
-function Invoke-PSLResourceInIsolatedRunspace {
+function Invoke-InIsolatedRunspace {
     [CmdletBinding()]
     [OutputType([object])]
     param(
@@ -637,7 +795,7 @@ function Invoke-PSLResourceInIsolatedRunspace {
 
         [Parameter()]
         [AllowNull()]
-        [object[]] $Arguments
+        [object[]] $ArgumentTokens
     )
 
     $lockfilePath = Get-LockfilePath -ProjectRoot $ProjectRoot
@@ -653,8 +811,8 @@ function Invoke-PSLResourceInIsolatedRunspace {
         throw "Lockfile does not contain any local resources: $lockfilePath"
     }
 
-    if ($null -eq $Arguments) {
-        $Arguments = @()
+    if ($null -eq $ArgumentTokens) {
+        $ArgumentTokens = @()
     }
 
     # NOTE: Top-level isolated invocations need the caller host so host-aware output survives the
@@ -678,10 +836,13 @@ function Invoke-PSLResourceInIsolatedRunspace {
     }
 
     $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-    $argumentResolverName = 'ConvertTo-PSLResourceInvocationArguments'
-    $argumentResolverDefinition = (Get-Command $argumentResolverName -CommandType Function).ScriptBlock.ToString()
-    $runspaceInvokerName = 'Invoke-PSLResourceRunspaceCommand'
-    $runspaceInvokerDefinition = (Get-Command $runspaceInvokerName -CommandType Function).ScriptBlock.ToString()
+    $runspaceFunctionNames = @(
+        'Test-PslrmParameterToken'
+        'Get-PslrmParameterTokenInfo'
+        'Get-PslrmCommandParameter'
+        'Invoke-PslrmCommandWithArgumentTokens'
+        'Invoke-PslrmRunspaceCommand'
+    )
     $initialSessionState.Variables.Add(
         [System.Management.Automation.Runspaces.SessionStateVariableEntry]::new(
             $isolatedRunspaceDepthVariableName,
@@ -689,18 +850,17 @@ function Invoke-PSLResourceInIsolatedRunspace {
             'Current nesting depth for PSLRM isolated runspaces.'
         )
     ) | Out-Null
-    $initialSessionState.Commands.Add(
-        [System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new(
-            $argumentResolverName,
-            $argumentResolverDefinition
-        )
-    ) | Out-Null
-    $initialSessionState.Commands.Add(
-        [System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new(
-            $runspaceInvokerName,
-            $runspaceInvokerDefinition
-        )
-    ) | Out-Null
+    foreach ($functionName in $runspaceFunctionNames) {
+        $functionDefinition = (Get-Command $functionName -CommandType Function).ScriptBlock.ToString()
+        $initialSessionState.Commands.Add(
+            [System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new(
+                $functionName,
+                $functionDefinition
+            )
+        ) | Out-Null
+    }
+
+    $runspaceInvokerName = 'Invoke-PslrmRunspaceCommand'
 
     $shareCallerHost = $isolatedRunspaceDepth -eq 0
 
@@ -724,7 +884,7 @@ function Invoke-PSLResourceInIsolatedRunspace {
         $powerShell = $powerShell.AddParameter('StorePath', $storePath)
         $powerShell = $powerShell.AddParameter('ModuleNames', $moduleNames)
         $powerShell = $powerShell.AddParameter('CommandName', $CommandName)
-        $powerShell = $powerShell.AddParameter('Arguments', $Arguments)
+        $powerShell = $powerShell.AddParameter('ArgumentTokens', $ArgumentTokens)
 
         $outputCollection = [System.Management.Automation.PSDataCollection[psobject]]::new()
         $inputCollection = [System.Management.Automation.PSDataCollection[psobject]]::new()
@@ -784,13 +944,13 @@ function Invoke-PSLResourceInIsolatedRunspace {
         $errorRecords = [System.Collections.Generic.List[System.Management.Automation.ErrorRecord]]::new()
 
         foreach ($forwarder in $streamForwarders) {
-            $forwarder.Subscription = New-PSLResourceDataAddedSubscription -Collection $forwarder.Collection -Queue $forwarder.Queue
+            $forwarder.Subscription = New-DataAddedSubscription -Collection $forwarder.Collection -Queue $forwarder.Queue
         }
 
-        $errorSubscription = New-PSLResourceDataAddedSubscription -Collection $powerShell.Streams.Error -Queue $errorQueue
+        $errorSubscription = New-DataAddedSubscription -Collection $powerShell.Streams.Error -Queue $errorQueue
 
         $drainQueues = {
-            Invoke-PSLResourceQueuedStreamDrain -Forwarders $streamForwarders -ErrorQueue $errorQueue -ErrorRecords $errorRecords
+            Invoke-QueuedStreamDrain -Forwarders $streamForwarders -ErrorQueue $errorQueue -ErrorRecords $errorRecords
         }
 
         $asyncResult = $null
@@ -806,13 +966,13 @@ function Invoke-PSLResourceInIsolatedRunspace {
             $powerShell.EndInvoke($asyncResult) | Out-Null
         }
         catch {
-            $endInvokeError = Resolve-PSLResourceInvocationError -ErrorRecord $_
+            $endInvokeError = Resolve-InvocationError -ErrorRecord $_
         }
 
         & $drainQueues
 
         if ($errorRecords.Count -gt 0) {
-            $PSCmdlet.ThrowTerminatingError((Resolve-PSLResourceInvocationError -ErrorRecord $errorRecords[0]))
+            $PSCmdlet.ThrowTerminatingError((Resolve-InvocationError -ErrorRecord $errorRecords[0]))
         }
 
         if ($null -ne $endInvokeError) {
@@ -821,9 +981,9 @@ function Invoke-PSLResourceInIsolatedRunspace {
     }
     finally {
         foreach ($forwarder in $streamForwarders) {
-            Remove-PSLResourceDataAddedSubscription -Subscription $forwarder.Subscription
+            Remove-DataAddedSubscription -Subscription $forwarder.Subscription
         }
-        Remove-PSLResourceDataAddedSubscription -Subscription $errorSubscription
+        Remove-DataAddedSubscription -Subscription $errorSubscription
         if ($null -ne $powerShell) {
             $powerShell.Dispose()
         }

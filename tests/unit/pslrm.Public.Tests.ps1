@@ -186,6 +186,134 @@ Export-ModuleMember -Function 'Invoke-LocalEcho'
         }
     }
 
+    It 'preserves trailing parameter-like tokens when using ArgumentTokens' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-argument-tokens-trailing-switch'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalForwardModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalForwardModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalForwardModule' -CommandName 'Invoke-ForwardedBuildLikeCommand' -ModuleBody @'
+function Invoke-ForwardedBuildLikeCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string] $Task,
+
+        [Parameter(Position = 0)]
+        [string] $Path,
+
+        [Parameter(ValueFromRemainingArguments)]
+        [object[]] $RemainingArguments
+    )
+
+    [pscustomobject]@{
+        Task = $Task
+        Path = $Path
+        RemainingArguments = @($RemainingArguments)
+    }
+}
+
+Export-ModuleMember -Function 'Invoke-ForwardedBuildLikeCommand'
+'@
+
+            $actual = Invoke-PSLResource -Path $root -CommandName 'Invoke-ForwardedBuildLikeCommand' -ArgumentTokens @(
+                '-Task',
+                'UnitTest',
+                '.build.ps1',
+                '-DisableCoverage'
+            )
+
+            $actual.Task | Should -BeExactly 'UnitTest'
+            $actual.Path | Should -BeExactly '.build.ps1'
+            $actual.RemainingArguments | Should -Be @('-DisableCoverage')
+        }
+    }
+
+    It 'treats inline boolean tokens as self-contained values' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-argument-tokens-inline-bool'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalBooleanModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalBooleanModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalBooleanModule' -CommandName 'Invoke-InlineBooleanProbe' -ModuleBody @'
+function Invoke-InlineBooleanProbe {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [bool] $Enabled,
+
+        [Parameter(Position = 0)]
+        [string] $Path,
+
+        [Parameter(ValueFromRemainingArguments)]
+        [object[]] $RemainingArguments
+    )
+
+    [pscustomobject]@{
+        Enabled = $Enabled
+        Path = $Path
+        RemainingArguments = @($RemainingArguments)
+    }
+}
+
+Export-ModuleMember -Function 'Invoke-InlineBooleanProbe'
+'@
+
+            $actual = Invoke-PSLResource -Path $root -CommandName 'Invoke-InlineBooleanProbe' -ArgumentTokens @(
+                '-Enabled:$false',
+                '.build.ps1',
+                '-DisableCoverage'
+            )
+
+            $actual.Enabled | Should -BeFalse
+            $actual.Path | Should -BeExactly '.build.ps1'
+            $actual.RemainingArguments | Should -Be @('-DisableCoverage')
+        }
+    }
+
+    It 'treats negative numeric tokens as values instead of parameters' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-argument-tokens-negative-number'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LocalNumberModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LocalNumberModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LocalNumberModule' -CommandName 'Invoke-NegativeNumberProbe' -ModuleBody @'
+function Invoke-NegativeNumberProbe {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [int] $Count,
+
+        [Parameter(Position = 0)]
+        [string] $Path
+    )
+
+    [pscustomobject]@{
+        Count = $Count
+        Path = $Path
+    }
+}
+
+Export-ModuleMember -Function 'Invoke-NegativeNumberProbe'
+'@
+
+            $actual = Invoke-PSLResource -Path $root -CommandName 'Invoke-NegativeNumberProbe' -ArgumentTokens @(
+                '-Count',
+                '-1',
+                '.build.ps1'
+            )
+
+            $actual.Count | Should -Be -1
+            $actual.Path | Should -BeExactly '.build.ps1'
+        }
+    }
+
     It 'resolves relative paths from the project root inside the isolated runspace' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-invoke-relative-path'

@@ -39,7 +39,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     }
 
     try {
-        Invoke-PSLResource -Path $PSScriptRoot -CommandName 'Invoke-Build' -Arguments $invokeBuildArguments
+        Invoke-PSLResource -Path $PSScriptRoot -CommandName 'Invoke-Build' -ArgumentTokens $invokeBuildArguments
         exit 0
     }
     catch {
