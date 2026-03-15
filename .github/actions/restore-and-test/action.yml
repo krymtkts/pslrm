@@ -1,0 +1,34 @@
+name: Restore and test
+description: Restore PSGallery dependencies and execute the full test suite.
+
+inputs:
+  shell:
+    description: Shell used to execute restore and test commands.
+    required: true
+  disable-coverage:
+    description: Whether to disable code coverage collection.
+    required: false
+    default: false
+
+runs:
+  using: composite
+  steps:
+    - name: Restore modules from PSGallery
+      shell: ${{ inputs.shell }}
+      run: |
+        Set-PSResourceRepository PSGallery -Trusted
+        Import-Module ./pslrm.psd1 -Force
+        Restore-PSLResource
+    - name: Execute All Tests
+      shell: ${{ inputs.shell }}
+      env:
+        DISABLE_COVERAGE: ${{ inputs.disable-coverage }}
+      run: |
+        $Params = @{
+            Tasks = 'TestAll'
+        }
+        # TODO: currently switch parameter not work correctly in pslrm.
+        # if ($env:DISABLE_COVERAGE -eq 'true') {
+        #     $Params['DisableCoverage'] = $true
+        # }
+        & ./.build.ps1 @Params
