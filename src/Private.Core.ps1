@@ -240,7 +240,10 @@ function Find-ProjectRoot {
     [OutputType([string])]
     param(
         [Parameter()]
-        [ValidateNotNullOrWhiteSpace()]
+        [ValidateNotNullOrEmpty()]
+        [ValidateScript({
+                -not [string]::IsNullOrWhiteSpace($_)
+            })]
         [string] $Path = (Get-Location).Path
     )
 
