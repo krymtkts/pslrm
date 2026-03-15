@@ -8,8 +8,11 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Variables are used in script blocks and argument completers')]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'Stage', 'Import', 'Release')]
+    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'Stage', 'Import', 'ReleaseTestAll', 'Release')]
     [string[]] $Tasks = @('UnitTest'),
+
+    [Parameter()]
+    [switch] $DisableCoverage,
 
     [Parameter()]
     [switch] $PushToGallery
@@ -28,6 +31,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         $Tasks
         $PSCommandPath
     )
+    if ($DisableCoverage) {
+        $invokeBuildArguments += '-DisableCoverage'
+    }
     if ($PushToGallery) {
         $invokeBuildArguments += '-PushToGallery'
     }
@@ -45,6 +51,15 @@ if ($MyInvocation.InvocationName -ne '.') {
 # Required PowerShell version check.
 if ($PSVersionTable.PSVersion -lt [Version]'5.1') {
     throw "This build requires PowerShell 5.1+. Current: $($PSVersionTable.PSVersion)."
+}
+
+$coverageAwareTasks = @('UnitTest', 'IntegrationTest', 'TestAll', 'ReleaseTestAll', 'Release')
+if ($DisableCoverage -and -not ($Tasks | Where-Object { $_ -in $coverageAwareTasks })) {
+    throw '-DisableCoverage is only valid with UnitTest, IntegrationTest, TestAll, ReleaseTestAll, or Release.'
+}
+
+if ($PushToGallery -and ('Release' -notin $Tasks)) {
+    throw '-PushToGallery is only valid when the Release task is requested.'
 }
 
 # --- Setup ---
@@ -98,19 +113,6 @@ function Assert-CommandAvailable {
     }
 }
 
-function Remove-PathIfExists {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string] $LiteralPath
-    )
-
-    if (Test-Path -LiteralPath $LiteralPath) {
-        Remove-Item -LiteralPath $LiteralPath -Recurse -Force
-    }
-}
-
 function Invoke-TestTask {
     [CmdletBinding()]
     param(
@@ -118,8 +120,8 @@ function Invoke-TestTask {
         [ValidateNotNullOrEmpty()]
         [string] $TestPath,
 
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
+        [Parameter()]
+        [AllowNull()]
         [string] $CoverageOutputPath,
 
         [Parameter(Mandatory)]
@@ -135,13 +137,15 @@ function Invoke-TestTask {
     $config.Run.Path = @($TestPath)
     $config.Run.PassThru = $true
     $config.Output.Verbosity = 'Detailed'
-    $config.CodeCoverage.Enabled = $true
-    $config.CodeCoverage.Path = @(
-        (Join-Path $ModuleRoot 'pslrm.psm1'),
-        (Join-Path $ModuleRoot 'src\*.ps1')
-    )
-    $config.CodeCoverage.OutputFormat = 'JaCoCo'
-    $config.CodeCoverage.OutputPath = $CoverageOutputPath
+    if ($CoverageOutputPath) {
+        $config.CodeCoverage.Enabled = $true
+        $config.CodeCoverage.Path = @(
+            (Join-Path $ModuleRoot 'pslrm.psm1'),
+            (Join-Path $ModuleRoot 'src\*.ps1')
+        )
+        $config.CodeCoverage.OutputFormat = 'JaCoCo'
+        $config.CodeCoverage.OutputPath = $CoverageOutputPath
+    }
     $config.TestResult.Enabled = $true
     $config.TestResult.OutputFormat = 'NUnitXml'
     $config.TestResult.OutputPath = $TestResultOutputPath
@@ -194,11 +198,13 @@ Task Init {
 Task Clean Init, {
     Write-Host 'Cleaning build artifacts.' -ForegroundColor Yellow
 
-    Remove-PathIfExists -LiteralPath $ModulePublishPath
-    Remove-PathIfExists -LiteralPath (Join-Path $PSScriptRoot 'coverage.xml')
-    Remove-PathIfExists -LiteralPath (Join-Path $PSScriptRoot 'coverage.integration.xml')
-    Remove-PathIfExists -LiteralPath (Join-Path $PSScriptRoot 'testResults.xml')
-    Remove-PathIfExists -LiteralPath (Join-Path $PSScriptRoot 'testResults.integration.xml')
+    if (Test-Path -LiteralPath $ModulePublishPath -PathType Container) {
+        Remove-Item -LiteralPath $ModulePublishPath -Recurse -Force
+    }
+
+    @('testResults*.xml', 'coverage*.xml') | ForEach-Object {
+        Get-ChildItem -LiteralPath $PSScriptRoot -Filter $_ -File -ErrorAction SilentlyContinue
+    } | Remove-Item -Force
 }
 
 Task Build Clean, {
@@ -231,13 +237,28 @@ Task Lint Build, {
 Task UnitTest Lint, {
     Write-Host 'Running unit tests.' -ForegroundColor Yellow
 
-    Invoke-TestTask -TestPath 'tests/unit' -CoverageOutputPath 'coverage.xml' -TestResultOutputPath 'testResults.xml'
+    $Params = @{
+        TestPath = 'tests/unit'
+        TestResultOutputPath = 'testResults.xml'
+    }
+    if (-not $DisableCoverage) {
+        $Params.CoverageOutputPath = 'coverage.xml'
+
+    }
+    Invoke-TestTask @Params
 }
 
 Task IntegrationTest Build, {
     Write-Host 'Running integration tests.' -ForegroundColor Yellow
 
-    Invoke-TestTask -TestPath 'tests/integration' -CoverageOutputPath 'coverage.integration.xml' -TestResultOutputPath 'testResults.integration.xml'
+    $Params = @{
+        TestPath = 'tests/integration'
+        TestResultOutputPath = 'testResults.integration.xml'
+    }
+    if (-not $DisableCoverage) {
+        $Params.CoverageOutputPath = 'coverage.integration.xml'
+    }
+    Invoke-TestTask @Params
 }
 
 Task TestAll UnitTest, IntegrationTest
@@ -245,8 +266,24 @@ Task TestAll UnitTest, IntegrationTest
 Task ReleaseTestAll Import, {
     Write-Host 'Running release tests against staged module artifacts.' -ForegroundColor Yellow
 
-    Invoke-TestTask -TestPath 'tests/unit' -CoverageOutputPath 'coverage.xml' -TestResultOutputPath 'testResults.xml' -ModuleRoot $ModulePublishPath
-    Invoke-TestTask -TestPath 'tests/integration' -CoverageOutputPath 'coverage.integration.xml' -TestResultOutputPath 'testResults.integration.xml' -ModuleRoot $ModulePublishPath
+    $Params = @{
+        TestPath = 'tests/unit'
+        TestResultOutputPath = 'testResults.release.xml'
+        ModuleRoot = $ModulePublishPath
+    }
+    if (-not $DisableCoverage) {
+        $Params.CoverageOutputPath = 'coverage.release.xml'
+    }
+    Invoke-TestTask @Params
+    $IntegrationTestParams = @{
+        TestPath = 'tests/integration'
+        TestResultOutputPath = 'testResults.integration.release.xml'
+        ModuleRoot = $ModulePublishPath
+    }
+    if (-not $DisableCoverage) {
+        $IntegrationTestParams.CoverageOutputPath = 'coverage.integration.release.xml'
+    }
+    Invoke-TestTask @IntegrationTestParams
 }
 
 Task Stage Build, {
