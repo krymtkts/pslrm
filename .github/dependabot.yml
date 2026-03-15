@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # Maintain GitHub Actions workflows and local composite actions.
+  - package-ecosystem: "github-actions"
+    directories:
+      # GitHub Actions scans workflows under /.github/workflows from the repo root.
+      - "/"
+      # Local composite actions under .github/actions are not covered by / alone.
+      - "/.github/actions/*"
+    schedule:
+      interval: "weekly"
+    groups:
+      workflow:
+        patterns:
+          - "*"
