@@ -28,7 +28,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Restore modules and execute all tests
         uses: ./.github/actions/restore-and-test
         with:
