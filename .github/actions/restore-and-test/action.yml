@@ -33,8 +33,7 @@ runs:
         $Params = @{
             Tasks = 'TestAll'
         }
-        # TODO: currently switch parameter not work correctly in pslrm.
-        # if ($env:DISABLE_COVERAGE -eq 'true') {
-        #     $Params['DisableCoverage'] = $true
-        # }
+        if ($env:DISABLE_COVERAGE -eq 'true') {
+            $Params['DisableCoverage'] = $true
+        }
         & ./.build.ps1 @Params
