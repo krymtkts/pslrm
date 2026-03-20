@@ -8,7 +8,7 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Variables are used in script blocks and argument completers')]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'Stage', 'Import', 'ReleaseTestAll', 'Release')]
+    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'SyncReleaseNotes', 'Stage', 'Import', 'ReleaseTestAll', 'Release')]
     [string[]] $Tasks = @('UnitTest'),
 
     [Parameter()]
@@ -68,6 +68,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'tools\Build.Helpers.ps1')
+. (Join-Path $PSScriptRoot 'tools\ReleaseNotes.Helpers.ps1')
 
 $ModuleScript = Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.psm1' | Select-Object -First 1
 if (-not $ModuleScript) {
@@ -82,6 +83,7 @@ $ToolsPath = (Resolve-Path (Join-Path $PSScriptRoot 'tools')).Path
 $ModuleVersion = Import-PowerShellDataFile -Path $ModuleManifest.FullName | Get-FullModuleVersion
 $ModulePublishPath = Join-Path $PSScriptRoot (Join-Path 'publish' $ModuleName)
 $PublishModuleManifest = Join-Path $ModulePublishPath "${ModuleName}.psd1"
+$FullChangelogUrl = 'https://github.com/krymtkts/pslrm/blob/main/CHANGELOG.md'
 $ScriptAnalyzerSettingsPath = Join-Path $PSScriptRoot 'PSScriptAnalyzerSettings.psd1'
 
 # --- Tasks (Invoke-Build) ---
@@ -169,6 +171,13 @@ Task IntegrationTest Build, {
 }
 
 Task TestAll UnitTest, IntegrationTest
+
+Task SyncReleaseNotes Build, {
+    Write-Host 'Syncing module manifest ReleaseNotes from CHANGELOG.md.' -ForegroundColor Yellow
+
+    $releaseNotes = Get-ManifestReleaseNotes -Version $ModuleVersion -FullChangelogUrl $FullChangelogUrl
+    Set-ManifestReleaseNotes -ManifestPath $ModuleManifest.FullName -ReleaseNotes $releaseNotes
+}
 
 Task ReleaseTestAll Import, {
     Write-Host 'Running release tests against staged module artifacts.' -ForegroundColor Yellow
