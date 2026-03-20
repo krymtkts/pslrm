@@ -30,13 +30,13 @@ jobs:
         id: lockfile
         shell: pwsh
         run: |
-          git diff --quiet HEAD -- psreq.lock.psd1
-          if ($LASTEXITCODE -eq 0) {
-            "changed=false" >> $env:GITHUB_OUTPUT
-            Write-Host "No lockfile changes detected."
-          } else {
+          $diff = git status --porcelain -- psreq.lock.psd1
+          if ($diff) {
             "changed=true" >> $env:GITHUB_OUTPUT
             Write-Host "Lockfile changes detected."
+          } else {
+            "changed=false" >> $env:GITHUB_OUTPUT
+            Write-Host "No lockfile changes detected."
           }
       - name: Create or update pull request
         if: steps.lockfile.outputs.changed == 'true'
