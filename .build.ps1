@@ -67,24 +67,7 @@ if ($PushToGallery -and ('Release' -notin $Tasks)) {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Get-FullModuleVersion {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param (
-        [Parameter(Mandatory, Position = 0, ValueFromPipeline)]
-        [ValidateNotNull()]
-        [psobject]
-        $Module
-    )
-
-    $prereleaseSuffix = ''
-    if ($Module.PrivateData -and $Module.PrivateData.PSData -and $Module.PrivateData.PSData['Prerelease']) {
-        $prereleaseSuffix = "-$($Module.PrivateData.PSData['Prerelease'])"
-    }
-    $version = if ($Module.ModuleVersion) { $Module.ModuleVersion } else { $Module.Version }
-
-    "${version}${prereleaseSuffix}"
-}
+. (Join-Path $PSScriptRoot 'tools\Build.Helpers.ps1')
 
 $ModuleScript = Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.psm1' | Select-Object -First 1
 if (-not $ModuleScript) {
@@ -95,88 +78,11 @@ $ModuleName = $ModuleScript.BaseName
 $ModuleManifest = Get-Item -LiteralPath (Join-Path $PSScriptRoot "$ModuleName.psd1")
 $ModuleSrcPath = (Resolve-Path (Join-Path $PSScriptRoot 'src')).Path
 $TestsPath = (Resolve-Path (Join-Path $PSScriptRoot 'tests')).Path
+$ToolsPath = (Resolve-Path (Join-Path $PSScriptRoot 'tools')).Path
 $ModuleVersion = Import-PowerShellDataFile -Path $ModuleManifest.FullName | Get-FullModuleVersion
 $ModulePublishPath = Join-Path $PSScriptRoot (Join-Path 'publish' $ModuleName)
 $PublishModuleManifest = Join-Path $ModulePublishPath "${ModuleName}.psd1"
 $ScriptAnalyzerSettingsPath = Join-Path $PSScriptRoot 'PSScriptAnalyzerSettings.psd1'
-
-function Assert-CommandAvailable {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string] $Name
-    )
-
-    if (-not (Get-Command -Name $Name -ErrorAction SilentlyContinue)) {
-        throw "Required command not available: $Name"
-    }
-}
-
-function Invoke-TestTask {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string] $TestPath,
-
-        [Parameter()]
-        [AllowNull()]
-        [string] $CoverageOutputPath,
-
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string] $TestResultOutputPath,
-
-        [Parameter()]
-        [ValidateNotNullOrEmpty()]
-        [string] $ModuleRoot = $PSScriptRoot
-    )
-
-    $config = New-PesterConfiguration
-    $config.Run.Path = @($TestPath)
-    $config.Run.PassThru = $true
-    $config.Output.Verbosity = 'Detailed'
-    if ($CoverageOutputPath) {
-        $config.CodeCoverage.Enabled = $true
-        $config.CodeCoverage.Path = @(
-            (Join-Path $ModuleRoot 'pslrm.psm1'),
-            (Join-Path $ModuleRoot 'src\*.ps1')
-        )
-        $config.CodeCoverage.OutputFormat = 'JaCoCo'
-        $config.CodeCoverage.OutputPath = $CoverageOutputPath
-    }
-    $config.TestResult.Enabled = $true
-    $config.TestResult.OutputFormat = 'NUnitXml'
-    $config.TestResult.OutputPath = $TestResultOutputPath
-
-    Push-Location $PSScriptRoot
-
-    $previousTestModuleRoot = $env:PSLRM_TEST_MODULE_ROOT
-    try {
-        $env:PSLRM_TEST_MODULE_ROOT = $ModuleRoot
-        Write-Host "Invoking Pester tests for module: $ModuleRoot" -ForegroundColor Yellow
-        $pesterResult = Invoke-Pester -Configuration $config
-
-        if ($null -eq $pesterResult) {
-            throw 'Invoke-Pester did not return a result object.'
-        }
-
-        if ($pesterResult.Result -ne 'Passed') {
-            throw "Pester reported test failures. Result=$($pesterResult.Result); FailedCount=$($pesterResult.FailedCount)."
-        }
-    }
-    finally {
-        if ($null -eq $previousTestModuleRoot) {
-            Remove-Item Env:PSLRM_TEST_MODULE_ROOT -ErrorAction SilentlyContinue
-        }
-        else {
-            $env:PSLRM_TEST_MODULE_ROOT = $previousTestModuleRoot
-        }
-
-        Pop-Location
-    }
-}
 
 # --- Tasks (Invoke-Build) ---
 
@@ -223,6 +129,7 @@ Task Lint Build, {
     $issues = @(
         @(
             (Join-Path $PSScriptRoot '.build.ps1'),
+            $ToolsPath,
             $ModuleScript.FullName,
             $ModuleSrcPath,
             $TestsPath
