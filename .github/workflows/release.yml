@@ -1,5 +1,26 @@
 name: Release module
 
+# Release flow
+#
+# This workflow always runs against a version tag ref.
+#
+# Normal path:
+# - `push` on `v*`
+# - `workflow_dispatch` with `mode=full`
+# - Flow: validate -> publish to PowerShell Gallery -> create or update GitHub Release
+# - Prerequisites:
+#   - The `release` environment is the manual approval gate before publish
+#   - Store `POWERSHELL_GALLERY_API_KEY` in the `release` environment
+#
+# Recovery path:
+# - `workflow_dispatch` with `mode=github-release-only`
+# - Use this only after the target version is already visible on PowerShell Gallery
+# - This path skips publish and repairs the GitHub Release only
+#
+# Retry rule:
+# - Rerun a failed job first
+# - Use recovery mode only when publish already succeeded and GitHub Release needs repair
+
 on:
   push:
     tags:
@@ -34,6 +55,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
+      # NOTE: the workflow is tag-driven even when started from workflow_dispatch.
       - name: Validate release ref
         run: |
           if ($env:RELEASE_REF -notmatch '^refs/tags/v.+') {
@@ -45,8 +67,10 @@ jobs:
         with:
           ref: ${{ env.RELEASE_REF }}
 
-      - name: Validate PSGallery publish state for recovery mode
+      - name: Validate PowerShell Gallery publish state for recovery mode
         if: github.event_name == 'workflow_dispatch'
+        # NOTE: Recovery mode is intentionally fail-closed.
+        # NOTE: It can run only after the target version is already visible on PowerShell Gallery.
         run: |
           $mode = '${{ inputs.mode }}'
 
@@ -84,6 +108,9 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     if: github.event_name != 'workflow_dispatch' || inputs.mode == 'full'
+    # NOTE: Publish is restricted to the normal full path.
+    # NOTE: The release environment is the manual gate before PowerShell Gallery publication.
+    # NOTE: The PowerShell Gallery API key is expected as an environment secret there.
     environment:
       name: release
     env:
@@ -113,6 +140,8 @@ jobs:
     needs:
       - validate
       - publish
+    # NOTE: Run after publish on the normal path.
+    # NOTE: In recovery mode, run when validate succeeded and publish was intentionally skipped.
     if: >
       always() &&
       needs.validate.result == 'success' &&
