@@ -4,18 +4,23 @@
 #>
 
 # Build script parameters
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Default')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Variables are used in script blocks and argument completers')]
 param(
-    [Parameter(Position = 0)]
+    [Parameter(Position = 0, ParameterSetName = 'Default')]
+    [Parameter(Position = 0, ParameterSetName = 'Publish')]
     [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'SyncReleaseNotes', 'Stage', 'Import', 'ReleaseTestAll', 'Release')]
     [string[]] $Tasks = @('UnitTest'),
 
     [Parameter()]
     [switch] $DisableCoverage,
 
-    [Parameter()]
-    [switch] $PushToGallery
+    [Parameter(ParameterSetName = 'Publish', Mandatory)]
+    [switch] $PushToGallery,
+
+    [Parameter(ParameterSetName = 'Publish', Mandatory)]
+    [ValidateNotNull()]
+    [securestring] $ApiKey
 )
 
 # If invoked directly (not dot-sourced by Invoke-Build), hand off execution to Invoke-Build.
@@ -36,6 +41,8 @@ if ($MyInvocation.InvocationName -ne '.') {
     }
     if ($PushToGallery) {
         $invokeBuildArguments += '-PushToGallery'
+        $invokeBuildArguments += '-ApiKey'
+        $invokeBuildArguments += $ApiKey
     }
 
     try {
@@ -244,9 +251,11 @@ Task Release ReleaseTestAll, {
     $Params = @{
         Path = $ModulePublishPath
         Repository = 'PSGallery'
-        ApiKey = (Get-Credential API-key -Message 'Enter your API key as the password').GetNetworkCredential().Password
         WhatIf = -not $PushToGallery
         Verbose = $true
+    }
+    if ($PushToGallery) {
+        $Params.ApiKey = ConvertFrom-SecureStringToPlainText -SecureString $ApiKey
     }
     Publish-PSResource @Params
 }

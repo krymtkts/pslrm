@@ -34,6 +34,19 @@ function Assert-CommandAvailable {
     }
 }
 
+function ConvertFrom-SecureStringToPlainText {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [System.Security.SecureString] $SecureString
+    )
+
+    # NOTE: Windows PowerShell 5.1 does not support ConvertFrom-SecureString -AsPlainText.
+    [System.Net.NetworkCredential]::new('', $SecureString).Password
+}
+
 function Invoke-TestTask {
     [CmdletBinding()]
     param(
