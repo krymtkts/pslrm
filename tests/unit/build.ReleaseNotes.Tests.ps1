@@ -102,6 +102,59 @@ Describe 'Get-ChangelogEntry' {
     }
 }
 
+Describe 'ConvertFrom-ReleaseTagToVersion' {
+    It 'returns the version part from a version tag' {
+        $version = ConvertFrom-ReleaseTagToVersion -ReleaseTag 'v1.1.2'
+
+        $version | Should -BeExactly '1.1.2'
+    }
+
+    It 'accepts a refs/tags prefix' {
+        $version = ConvertFrom-ReleaseTagToVersion -ReleaseTag 'refs/tags/v1.1.2'
+
+        $version | Should -BeExactly '1.1.2'
+    }
+
+    It 'fails when the tag does not start with v' {
+        { ConvertFrom-ReleaseTagToVersion -ReleaseTag '1.1.2' } |
+            Should -Throw 'Release tag must use the form v<version>: 1.1.2'
+    }
+}
+
+Describe 'Assert-ReleaseMetadata' {
+    It 'passes when the changelog section exists and the release tag matches the version' {
+        $changelogPath = Join-Path $TestDrive 'CHANGELOG.md'
+        (& $script:NewTestChangelogContent) | Set-Content -LiteralPath $changelogPath -NoNewline
+
+        { Assert-ReleaseMetadata -Path $changelogPath -Version '1.1.2' -ReleaseTag 'v1.1.2' } |
+            Should -Not -Throw
+    }
+
+    It 'passes when the changelog section exists and no release tag is supplied' {
+        $changelogPath = Join-Path $TestDrive 'CHANGELOG.md'
+        (& $script:NewTestChangelogContent) | Set-Content -LiteralPath $changelogPath -NoNewline
+
+        { Assert-ReleaseMetadata -Path $changelogPath -Version '1.1.2' } |
+            Should -Not -Throw
+    }
+
+    It 'fails when the changelog section is missing' {
+        $changelogPath = Join-Path $TestDrive 'CHANGELOG.md'
+        (& $script:NewTestChangelogContent) | Set-Content -LiteralPath $changelogPath -NoNewline
+
+        { Assert-ReleaseMetadata -Path $changelogPath -Version '2.0.0' -ReleaseTag 'v2.0.0' } |
+            Should -Throw 'Changelog entry not found for version: 2.0.0'
+    }
+
+    It 'fails when the release tag version does not match the manifest version' {
+        $changelogPath = Join-Path $TestDrive 'CHANGELOG.md'
+        (& $script:NewTestChangelogContent) | Set-Content -LiteralPath $changelogPath -NoNewline
+
+        { Assert-ReleaseMetadata -Path $changelogPath -Version '1.1.2' -ReleaseTag 'v1.1.1' } |
+            Should -Throw 'Release tag version does not match manifest version. Tag: 1.1.1, Manifest: 1.1.2'
+    }
+}
+
 Describe 'Get-ManifestReleaseNotes' {
     It 'formats the target version and the next two older versions plus a full changelog link' {
         $changelogPath = Join-Path $TestDrive 'CHANGELOG.md'

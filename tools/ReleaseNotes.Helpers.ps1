@@ -94,6 +94,53 @@ function Get-ChangelogEntry {
     (Get-ChangelogSection -Path $Path -Version $Version).Body
 }
 
+function ConvertFrom-ReleaseTagToVersion {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ReleaseTag
+    )
+
+    $normalizedTag = $ReleaseTag -replace '^refs/tags/', ''
+    $match = [System.Text.RegularExpressions.Regex]::Match($normalizedTag, '^v(?<Version>.+)$')
+    if (-not $match.Success) {
+        throw "Release tag must use the form v<version>: $ReleaseTag"
+    }
+
+    $match.Groups['Version'].Value
+}
+
+function Assert-ReleaseMetadata {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $Path = (Get-ChangelogPath),
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Version,
+
+        [Parameter()]
+        [AllowNull()]
+        [string] $ReleaseTag
+    )
+
+    # NOTE: assert changelog entry exists for the version, the content is not important for this assertion.
+    Get-ChangelogSection -Path $Path -Version $Version | Out-Null
+
+    if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
+        return
+    }
+
+    $tagVersion = ConvertFrom-ReleaseTagToVersion -ReleaseTag $ReleaseTag
+    if ($tagVersion -ne $Version) {
+        throw "Release tag version does not match manifest version. Tag: $tagVersion, Manifest: $Version"
+    }
+}
+
 function Get-ManifestReleaseNotes {
     [CmdletBinding()]
     [OutputType([string])]

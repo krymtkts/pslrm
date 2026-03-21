@@ -20,7 +20,11 @@ param(
 
     [Parameter(ParameterSetName = 'Publish', Mandatory)]
     [ValidateNotNull()]
-    [securestring] $ApiKey
+    [securestring] $ApiKey,
+
+    [Parameter(ParameterSetName = 'Publish', Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [string] $ReleaseTag
 )
 
 # If invoked directly (not dot-sourced by Invoke-Build), hand off execution to Invoke-Build.
@@ -40,6 +44,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         $invokeBuildArguments += '-DisableCoverage'
     }
     if ($PushToGallery) {
+        $invokeBuildArguments += '-ReleaseTag'
+        $invokeBuildArguments += $ReleaseTag
         $invokeBuildArguments += '-PushToGallery'
         $invokeBuildArguments += '-ApiKey'
         $invokeBuildArguments += $ApiKey
@@ -233,7 +239,13 @@ Task Import Stage, {
     }
 }
 
-Task Release ReleaseTestAll, {
+Task ValidateReleaseMetadata Build, {
+    Write-Host 'Validating release metadata.' -ForegroundColor Yellow
+
+    Assert-ReleaseMetadata -Version $ModuleVersion -ReleaseTag $ReleaseTag
+}
+
+Task Release ValidateReleaseMetadata, ReleaseTestAll, {
     Write-Host "Releasing module $ModulePublishPath" -ForegroundColor Magenta
 
     if (-not (Test-Path -LiteralPath $PublishModuleManifest -PathType Leaf)) {

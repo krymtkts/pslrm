@@ -1,10 +1,10 @@
 .tmp
 
 # Pester
-testResults.xml
-testResults.integration.xml
-coverage.xml
-coverage.integration.xml
+testResults*.xml
+testResults.integration*.xml
+coverage*.xml
+coverage.integration*.xml
 
 # pslrm
 .pslrm
