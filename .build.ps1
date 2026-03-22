@@ -22,7 +22,7 @@ param(
     [ValidateNotNull()]
     [securestring] $ApiKey,
 
-    [Parameter(ParameterSetName = 'Publish', Mandatory)]
+    [Parameter()]
     [ValidateNotNullOrEmpty()]
     [string] $ReleaseTag
 )
@@ -43,9 +43,11 @@ if ($MyInvocation.InvocationName -ne '.') {
     if ($DisableCoverage) {
         $invokeBuildArguments += '-DisableCoverage'
     }
-    if ($PushToGallery) {
+    if ($PSBoundParameters.ContainsKey('ReleaseTag')) {
         $invokeBuildArguments += '-ReleaseTag'
         $invokeBuildArguments += $ReleaseTag
+    }
+    if ($PushToGallery) {
         $invokeBuildArguments += '-PushToGallery'
         $invokeBuildArguments += '-ApiKey'
         $invokeBuildArguments += $ApiKey
