@@ -9,7 +9,7 @@
 param(
     [Parameter(Position = 0, ParameterSetName = 'Default')]
     [Parameter(Position = 0, ParameterSetName = 'Publish')]
-    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'SyncReleaseNotes', 'Stage', 'Import', 'ReleaseTestAll', 'Release')]
+    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'ReleaseNotes', 'Stage', 'Import', 'ReleaseTestAll', 'Release')]
     [string[]] $Tasks = @('UnitTest'),
 
     [Parameter()]
@@ -185,7 +185,7 @@ Task IntegrationTest Build, {
 
 Task TestAll UnitTest, IntegrationTest
 
-Task SyncReleaseNotes Build, {
+Task ReleaseNotes Build, {
     Write-Host 'Syncing module manifest ReleaseNotes from CHANGELOG.md.' -ForegroundColor Yellow
 
     $releaseNotes = Get-ManifestReleaseNotes -Version $ModuleVersion -FullChangelogUrl $FullChangelogUrl
