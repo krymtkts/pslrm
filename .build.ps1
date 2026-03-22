@@ -249,7 +249,7 @@ Task ValidateReleaseMetadata ValidateReleaseParameters, Build, {
 Task Release ValidateReleaseMetadata, ReleaseTestAll, {
     Write-Host "Releasing module $ModulePublishPath" -ForegroundColor Magenta
 
-    if ($PushToGallery -and -not $PSBoundParameters.ContainsKey('ApiKey')) {
+    if ($PushToGallery -and $null -eq $ApiKey) {
         throw '-ApiKey is required when -PushToGallery is specified.'
     }
 
