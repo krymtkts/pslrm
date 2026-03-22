@@ -9,7 +9,7 @@
 param(
     [Parameter(Position = 0, ParameterSetName = 'Default')]
     [Parameter(Position = 0, ParameterSetName = 'Publish')]
-    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'ReleaseNotes', 'Stage', 'Import', 'ReleaseTestAll', 'Release')]
+    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'ReleaseNotes', 'Stage', 'Import', 'ValidateReleaseMetadata', 'ReleaseTestAll', 'Release')]
     [string[]] $Tasks = @('UnitTest'),
 
     [Parameter()]
@@ -66,15 +66,6 @@ if ($MyInvocation.InvocationName -ne '.') {
 # Required PowerShell version check.
 if ($PSVersionTable.PSVersion -lt [Version]'5.1') {
     throw "This build requires PowerShell 5.1+. Current: $($PSVersionTable.PSVersion)."
-}
-
-$coverageAwareTasks = @('UnitTest', 'IntegrationTest', 'TestAll', 'ReleaseTestAll', 'Release')
-if ($DisableCoverage -and -not ($Tasks | Where-Object { $_ -in $coverageAwareTasks })) {
-    throw '-DisableCoverage is only valid with UnitTest, IntegrationTest, TestAll, ReleaseTestAll, or Release.'
-}
-
-if ($PushToGallery -and ('Release' -notin $Tasks)) {
-    throw '-PushToGallery is only valid when the Release task is requested.'
 }
 
 # --- Setup ---
@@ -194,6 +185,14 @@ Task ReleaseNotes Build, {
     Set-ManifestReleaseNotes -ManifestPath $ModuleManifest.FullName -ReleaseNotes $releaseNotes
 }
 
+Task ValidateReleaseParameters Init, {
+    Write-Host 'Validating release parameters.' -ForegroundColor Yellow
+
+    if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
+        throw '-ReleaseTag is required.'
+    }
+}
+
 Task ReleaseTestAll Import, {
     Write-Host 'Running release tests against staged module artifacts.' -ForegroundColor Yellow
 
@@ -241,7 +240,7 @@ Task Import Stage, {
     }
 }
 
-Task ValidateReleaseMetadata Build, {
+Task ValidateReleaseMetadata ValidateReleaseParameters, Build, {
     Write-Host 'Validating release metadata.' -ForegroundColor Yellow
 
     Assert-ReleaseMetadata -Version $ModuleVersion -ReleaseTag $ReleaseTag
@@ -249,6 +248,10 @@ Task ValidateReleaseMetadata Build, {
 
 Task Release ValidateReleaseMetadata, ReleaseTestAll, {
     Write-Host "Releasing module $ModulePublishPath" -ForegroundColor Magenta
+
+    if ($PushToGallery -and -not $PSBoundParameters.ContainsKey('ApiKey')) {
+        throw '-ApiKey is required when -PushToGallery is specified.'
+    }
 
     if (-not (Test-Path -LiteralPath $PublishModuleManifest -PathType Leaf)) {
         throw "Publish manifest not found. Run Stage before Release: $PublishModuleManifest"
