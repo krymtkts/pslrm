@@ -7,6 +7,8 @@ This project uses prerelease versions such as 0.0.1-alpha.
 
 ## [Unreleased]
 
+## [0.0.1-alpha]
+
 ### Added
 
 - Add project-local PowerShell resource management based on PSResourceGet.
@@ -20,8 +22,8 @@ This project uses prerelease versions such as 0.0.1-alpha.
 
 - This is the initial alpha release track for `pslrm`.
 - Supported PowerShell versions are Windows PowerShell 5.1 through PowerShell 7.x.
-- Supported repository is PSGallery.
-- `Invoke-PSLResource` defaults to `IsolatedRunspace` execution.
+- Supported repository is PowerShell Gallery.
+- `Invoke-PSLResource` uses `IsolatedRunspace` execution. `InProcess` execution is not implemented.
 
 ---
 
