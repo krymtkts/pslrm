@@ -5,7 +5,7 @@
     }
     'PSScriptAnalyzer' = @{
         'Repository' = 'PSGallery'
-        'Version' = '1.24.0'
+        'Version' = '1.25.0'
     }
     'Pester' = @{
         'Repository' = 'PSGallery'
