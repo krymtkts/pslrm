@@ -22,15 +22,10 @@ jobs:
           ref: main
           # NOTE: to trigger the workflow on a push to the bump branch.
           token: ${{ secrets.PSLRM_BUMP_TOKEN }}
-      - name: Restore modules from PSGallery
-        shell: pwsh
-        run: |
-          Set-PSResourceRepository PSGallery -Trusted
-          Import-Module ./pslrm.psd1 -Force
-          Restore-PSLResource
       - name: Bump dependencies
         shell: pwsh
         run: |
+          Set-PSResourceRepository PSGallery -Trusted
           Import-Module ./pslrm.psd1 -Force
           Update-PSLResource
       - name: Detect lockfile changes
