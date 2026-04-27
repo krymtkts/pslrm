@@ -27,4 +27,5 @@ This project uses prerelease versions such as 0.0.1-alpha.
 
 ---
 
-[Unreleased]: https://github.com/krymtkts/pslrm/commits/main
+[Unreleased]: https://github.com/krymtkts/pslrm/compare/v0.0.1-alpha...HEAD
+[0.0.1-alpha]: https://github.com/krymtkts/pslrm/releases/tag/v0.0.1-alpha
