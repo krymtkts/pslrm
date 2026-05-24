@@ -7,6 +7,10 @@ This project uses prerelease versions such as 0.0.1-alpha.
 
 ## [Unreleased]
 
+### Changed
+
+- Unpin `Microsoft.PowerShell.PSResourceGet` in the manifest to allow newer versions.
+
 ## [0.0.1-alpha]
 
 ### Added
