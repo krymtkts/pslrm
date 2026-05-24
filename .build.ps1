@@ -103,6 +103,7 @@ Task Init {
     Assert-CommandAvailable -Name 'Invoke-Pester'
     Assert-CommandAvailable -Name 'Get-KeepAChangelogManifestReleaseNotes'
     Assert-CommandAvailable -Name 'Set-KeepAChangelogManifestReleaseNotes'
+    Assert-CommandAvailable -Name 'Assert-KeepAChangelogReleaseMetadata'
 
     if (-not (Test-Path -LiteralPath $ScriptAnalyzerSettingsPath -PathType Leaf)) {
         throw "PSScriptAnalyzer settings file not found: $ScriptAnalyzerSettingsPath"
@@ -245,7 +246,7 @@ Task Import Stage, {
 Task ValidateReleaseMetadata ValidateReleaseParameters, Build, {
     Write-Host 'Validating release metadata.' -ForegroundColor Yellow
 
-    Assert-ReleaseMetadata -Version $ModuleVersion -ReleaseTag $ReleaseTag
+    Assert-KeepAChangelogReleaseMetadata -Version $ModuleVersion -ReleaseTag $ReleaseTag
 }
 
 Task Release ValidateReleaseMetadata, ReleaseTestAll, {
