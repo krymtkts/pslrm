@@ -74,7 +74,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'tools\Build.Helpers.ps1')
-. (Join-Path $PSScriptRoot 'tools\ReleaseNotes.Helpers.ps1')
 
 $ModuleScript = Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.psm1' | Select-Object -First 1
 if (-not $ModuleScript) {
@@ -101,6 +100,9 @@ Task Init {
     Assert-CommandAvailable -Name 'Invoke-Build'
     Assert-CommandAvailable -Name 'Invoke-ScriptAnalyzer'
     Assert-CommandAvailable -Name 'Invoke-Pester'
+    Assert-CommandAvailable -Name 'Get-KeepAChangelogManifestReleaseNotes'
+    Assert-CommandAvailable -Name 'Set-KeepAChangelogManifestReleaseNotes'
+    Assert-CommandAvailable -Name 'Assert-KeepAChangelogReleaseMetadata'
 
     if (-not (Test-Path -LiteralPath $ScriptAnalyzerSettingsPath -PathType Leaf)) {
         throw "PSScriptAnalyzer settings file not found: $ScriptAnalyzerSettingsPath"
@@ -181,8 +183,8 @@ Task TestAll UnitTest, IntegrationTest
 Task ReleaseNotes Build, {
     Write-Host 'Syncing module manifest ReleaseNotes from CHANGELOG.md.' -ForegroundColor Yellow
 
-    $releaseNotes = Get-ManifestReleaseNotes -Version $ModuleVersion -FullChangelogUrl $FullChangelogUrl
-    Set-ManifestReleaseNotes -ManifestPath $ModuleManifest.FullName -ReleaseNotes $releaseNotes
+    $releaseNotes = Get-KeepAChangelogManifestReleaseNotes -Version $ModuleVersion -FullChangelogUrl $FullChangelogUrl
+    Set-KeepAChangelogManifestReleaseNotes -ManifestPath $ModuleManifest.FullName -ReleaseNotes $releaseNotes
 }
 
 Task ValidateReleaseParameters Init, {
@@ -243,7 +245,7 @@ Task Import Stage, {
 Task ValidateReleaseMetadata ValidateReleaseParameters, Build, {
     Write-Host 'Validating release metadata.' -ForegroundColor Yellow
 
-    Assert-ReleaseMetadata -Version $ModuleVersion -ReleaseTag $ReleaseTag
+    Assert-KeepAChangelogReleaseMetadata -Version $ModuleVersion -ReleaseTag $ReleaseTag
 }
 
 Task Release ValidateReleaseMetadata, ReleaseTestAll, {
@@ -278,4 +280,3 @@ Task Release ValidateReleaseMetadata, ReleaseTestAll, {
 }
 
 Task . UnitTest
-
