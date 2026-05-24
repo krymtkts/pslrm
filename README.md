@@ -101,6 +101,18 @@ Use update when you want to apply changes from requirements.
 | `Restore-PSLResource`   | Lockfile                                    | No                            | Yes                 | Explicit reproducible restore, especially for CI    |
 | `Uninstall-PSLResource` | Requirements after removal                  | Yes                           | Yes                 | Remove direct dependencies from the project         |
 
+## Development
+
+pslrm uses `psreq.psd1` and `psreq.lock.psd1` for its own development tooling.
+The project-local resources include:
+
+- [`InvokeBuild`](https://github.com/nightroman/Invoke-Build) for build tasks
+- [`Pester`](https://github.com/pester/pester) for tests
+- [`PSScriptAnalyzer`](https://github.com/powershell/psscriptanalyzer) for linting
+- [`PSKeepAChangelogTools`](https://github.com/krymtkts/PSKeepAChangelogTools) for release notes and release metadata tasks
+
+They are build/release tooling dependencies, not runtime dependencies of the `pslrm` module.
+
 ## Notes / limitations
 
 - pslrm does not include its own dependency solver.
