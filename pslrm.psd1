@@ -52,10 +52,9 @@
 
     # Modules that must be imported into the global environment prior to importing this module
     RequiredModules = @(
-        @{
-            ModuleName = 'Microsoft.PowerShell.PSResourceGet'
-            ModuleVersion = '1.0.0'
-        }
+        # Keep PSResourceGet unpinned here.
+        # A pinned ModuleVersion turned into a fixed package dependency and blocked newer versions.
+        'Microsoft.PowerShell.PSResourceGet'
     )
 
     # Assemblies that must be loaded prior to importing this module
@@ -162,4 +161,3 @@ Full CHANGELOG: https://github.com/krymtkts/pslrm/blob/main/CHANGELOG.md
     # DefaultCommandPrefix = ''
 
 }
-
