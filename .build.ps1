@@ -74,7 +74,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'tools\Build.Helpers.ps1')
-. (Join-Path $PSScriptRoot 'tools\ReleaseNotes.Helpers.ps1')
 
 $ModuleScript = Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.psm1' | Select-Object -First 1
 if (-not $ModuleScript) {
