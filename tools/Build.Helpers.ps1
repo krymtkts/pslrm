@@ -24,7 +24,7 @@ function Get-FullModuleVersion {
 function Assert-CommandAvailable {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
+        [Parameter(Mandatory, Position = 0, ValueFromPipeline)]
         [ValidateNotNullOrEmpty()]
         [string] $Name
     )

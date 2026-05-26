@@ -98,13 +98,16 @@ Task Init {
     Write-Host "Module: ${ModuleName} ver${ModuleVersion} root=${ModuleSrcPath} publish=${ModulePublishPath}" -ForegroundColor Magenta
     Write-Host "Parameters: $($PSBoundParameters | ConvertTo-Json -Compress)" -ForegroundColor Green
 
-    Assert-CommandAvailable -Name 'Invoke-Build'
-    Assert-CommandAvailable -Name 'Invoke-ScriptAnalyzer'
-    Assert-CommandAvailable -Name 'Invoke-Pester'
-    Assert-CommandAvailable -Name 'Get-KeepAChangelogManifestReleaseNotes'
-    Assert-CommandAvailable -Name 'Set-KeepAChangelogManifestReleaseNotes'
-    Assert-CommandAvailable -Name 'Assert-KeepAChangelogReleaseMetadata'
-    Assert-CommandAvailable -Name 'Get-KeepAChangelogEntry'
+    @(
+        'git'
+        'Invoke-Build'
+        'Invoke-ScriptAnalyzer'
+        'Invoke-Pester'
+        'Get-KeepAChangelogManifestReleaseNotes'
+        'Set-KeepAChangelogManifestReleaseNotes'
+        'Assert-KeepAChangelogReleaseMetadata'
+        'Get-KeepAChangelogEntry'
+    ) | Assert-CommandAvailable
 
     if (-not (Test-Path -LiteralPath $ScriptAnalyzerSettingsPath -PathType Leaf)) {
         throw "PSScriptAnalyzer settings file not found: $ScriptAnalyzerSettingsPath"
@@ -252,8 +255,6 @@ Task ValidateReleaseMetadata ValidateReleaseParameters, Build, {
 
 Task ReleaseTag ValidateReleaseMetadata, {
     Write-Host 'Creating a signed release tag from CHANGELOG.md.' -ForegroundColor Yellow
-
-    Assert-CommandAvailable -Name 'git'
 
     $run = {
         param(
