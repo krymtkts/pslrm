@@ -9,7 +9,7 @@
 param(
     [Parameter(Position = 0, ParameterSetName = 'Default')]
     [Parameter(Position = 0, ParameterSetName = 'Publish')]
-    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'ReleaseNotes', 'Stage', 'Import', 'ValidateReleaseMetadata', 'ReleaseTestAll', 'Release')]
+    [ValidateSet('Init', 'Clean', 'Lint', 'Build', 'UnitTest', 'IntegrationTest', 'TestAll', 'ReleaseNotes', 'Stage', 'Import', 'ValidateReleaseMetadata', 'ReleaseTestAll', 'ReleaseTag', 'Release')]
     [string[]] $Tasks = @('UnitTest'),
 
     [Parameter()]
@@ -86,6 +86,7 @@ $ModuleSrcPath = (Resolve-Path (Join-Path $PSScriptRoot 'src')).Path
 $TestsPath = (Resolve-Path (Join-Path $PSScriptRoot 'tests')).Path
 $ToolsPath = (Resolve-Path (Join-Path $PSScriptRoot 'tools')).Path
 $ModuleVersion = Import-PowerShellDataFile -Path $ModuleManifest.FullName | Get-FullModuleVersion
+$ChangelogPath = Join-Path $PSScriptRoot 'CHANGELOG.md'
 $ModulePublishPath = Join-Path $PSScriptRoot (Join-Path 'publish' $ModuleName)
 $PublishModuleManifest = Join-Path $ModulePublishPath "${ModuleName}.psd1"
 $FullChangelogUrl = 'https://github.com/krymtkts/pslrm/blob/main/CHANGELOG.md'
@@ -97,12 +98,16 @@ Task Init {
     Write-Host "Module: ${ModuleName} ver${ModuleVersion} root=${ModuleSrcPath} publish=${ModulePublishPath}" -ForegroundColor Magenta
     Write-Host "Parameters: $($PSBoundParameters | ConvertTo-Json -Compress)" -ForegroundColor Green
 
-    Assert-CommandAvailable -Name 'Invoke-Build'
-    Assert-CommandAvailable -Name 'Invoke-ScriptAnalyzer'
-    Assert-CommandAvailable -Name 'Invoke-Pester'
-    Assert-CommandAvailable -Name 'Get-KeepAChangelogManifestReleaseNotes'
-    Assert-CommandAvailable -Name 'Set-KeepAChangelogManifestReleaseNotes'
-    Assert-CommandAvailable -Name 'Assert-KeepAChangelogReleaseMetadata'
+    @(
+        'git'
+        'Invoke-Build'
+        'Invoke-ScriptAnalyzer'
+        'Invoke-Pester'
+        'Get-KeepAChangelogManifestReleaseNotes'
+        'Set-KeepAChangelogManifestReleaseNotes'
+        'Assert-KeepAChangelogReleaseMetadata'
+        'Get-KeepAChangelogEntry'
+    ) | Assert-CommandAvailable
 
     if (-not (Test-Path -LiteralPath $ScriptAnalyzerSettingsPath -PathType Leaf)) {
         throw "PSScriptAnalyzer settings file not found: $ScriptAnalyzerSettingsPath"
@@ -246,6 +251,54 @@ Task ValidateReleaseMetadata ValidateReleaseParameters, Build, {
     Write-Host 'Validating release metadata.' -ForegroundColor Yellow
 
     Assert-KeepAChangelogReleaseMetadata -Version $ModuleVersion -ReleaseTag $ReleaseTag
+}
+
+Task ReleaseTag ValidateReleaseMetadata, {
+    Write-Host 'Creating a signed release tag from CHANGELOG.md.' -ForegroundColor Yellow
+
+    $run = {
+        param(
+            [Parameter(Mandatory)]
+            [ValidateNotNull()]
+            [scriptblock] $Command,
+
+            [Parameter(Mandatory)]
+            [ValidateNotNullOrEmpty()]
+            [string] $FailureMessage
+        )
+
+        $output = @(
+            & $Command 2>&1 |
+                ForEach-Object { "$_" } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+        if (-not $LASTEXITCODE) {
+            return , $output
+        }
+        if ($output.Count -eq 0) {
+            throw $FailureMessage
+        }
+        throw "$FailureMessage`n$($output -join "`n")"
+    }
+
+    $gitReleaseTag = ($ReleaseTag -replace '^refs/tags/', '').Trim()
+    $statusOutput = & $run { git status --porcelain=v1 --untracked-files=all } 'Failed to inspect git working tree status.'
+    if ($statusOutput.Count -gt 0) {
+        throw "Git working tree must be clean before release tagging. Remaining changes: $($statusOutput -join '; ')"
+    }
+
+    $existingTag = & $run { git tag --list $gitReleaseTag } "Failed to inspect local release tag '$gitReleaseTag'."
+    if ($existingTag.Count -gt 0) {
+        throw "Local release tag '$gitReleaseTag' already exists."
+    }
+
+    $releaseNotes = Get-KeepAChangelogEntry -Path $ChangelogPath -ReleaseTag $ReleaseTag
+    $tagMessage = if ($releaseNotes.EndsWith("`n")) { $releaseNotes } else { "$releaseNotes`n" }
+    $null = & $run {
+        git tag --sign --cleanup=verbatim $gitReleaseTag --message $tagMessage
+    } "Failed to create signed release tag '$gitReleaseTag'."
+
+    Write-Host "Created local signed release tag '$gitReleaseTag'." -ForegroundColor Green
 }
 
 Task Release ValidateReleaseMetadata, ReleaseTestAll, {
