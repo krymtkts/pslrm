@@ -14,6 +14,8 @@ name: Release module
 #
 # Recovery path:
 # - `workflow_dispatch` with `mode=github-release-only`
+#   `release_tag` input must be provided and point to an already published version.
+#   Flow: validate -> create or update GitHub Release
 # - Use this only after the target version is already visible on PowerShell Gallery
 # - This path skips publish and repairs the GitHub Release only
 #
@@ -35,6 +37,9 @@ on:
         options:
           - full
           - github-release-only
+      release_tag:
+        description: Release tag starting with 'v' to run the workflow against, required only for workflow_dispatch
+        type: string
 
 concurrency:
   group: release-${{ github.ref }}
@@ -44,8 +49,8 @@ permissions:
   contents: read
 
 env:
-  RELEASE_TAG: ${{ github.ref_name }}
-  RELEASE_REF: ${{ github.ref }}
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
 
 defaults:
   run:
