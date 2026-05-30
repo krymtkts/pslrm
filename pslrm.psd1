@@ -120,7 +120,13 @@
             # ReleaseNotes of this module
 
             ReleaseNotes = @'
-## [0.0.1-alpha]
+## [0.0.1] - 2026-05-30
+
+### Changed
+
+- Unpin `Microsoft.PowerShell.PSResourceGet` in the manifest to allow newer versions.
+
+## [0.0.1-alpha] - 2026-03-22
 
 ### Added
 
@@ -142,7 +148,7 @@ Full CHANGELOG: https://github.com/krymtkts/pslrm/blob/main/CHANGELOG.md
 '@
 
             # Prerelease string of this module
-            Prerelease = 'alpha'
+            # Prerelease = 'alpha'
 
             # Flag to indicate whether the module requires explicit user acceptance for install/update/save
             # RequireLicenseAcceptance = $false
