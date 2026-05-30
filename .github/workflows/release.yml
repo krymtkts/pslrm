@@ -164,14 +164,20 @@ jobs:
         with:
           ref: ${{ env.RELEASE_REF }}
 
+      - name: Restore modules from PSGallery
+        run: |
+          Set-PSResourceRepository PSGallery -Trusted
+          Import-Module ./pslrm.psd1 -Force
+          Restore-PSLResource
+
       - name: Generate release notes body
         id: release-notes
         run: |
-          . ./tools/ReleaseNotes.Helpers.ps1
+          ./.build.ps1 Stage -DisableCoverage
+          Import-Module ./publish/pslrm/pslrm.psd1 -Force
 
-          $version = ConvertFrom-ReleaseTagToVersion -ReleaseTag $env:RELEASE_TAG
           $releaseNotesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
-          $releaseNotes = Get-ChangelogEntry -Version $version
+          $releaseNotes = Get-KeepAChangelogEntry -ReleaseTag $env:RELEASE_TAG
 
           Set-Content -LiteralPath $releaseNotesPath -Value $releaseNotes -NoNewline
           "release_notes_path=$releaseNotesPath" >> $env:GITHUB_OUTPUT
