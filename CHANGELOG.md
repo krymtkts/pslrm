@@ -7,11 +7,13 @@ This project uses prerelease versions such as 0.0.1-alpha.
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-05-30
+
 ### Changed
 
 - Unpin `Microsoft.PowerShell.PSResourceGet` in the manifest to allow newer versions.
 
-## [0.0.1-alpha]
+## [0.0.1-alpha] - 2026-03-22
 
 ### Added
 
@@ -31,5 +33,6 @@ This project uses prerelease versions such as 0.0.1-alpha.
 
 ---
 
-[Unreleased]: https://github.com/krymtkts/pslrm/compare/v0.0.1-alpha...HEAD
+[Unreleased]: https://github.com/krymtkts/pslrm/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/krymtkts/pslrm/releases/tag/v0.0.1
 [0.0.1-alpha]: https://github.com/krymtkts/pslrm/releases/tag/v0.0.1-alpha
