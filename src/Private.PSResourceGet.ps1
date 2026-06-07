@@ -488,7 +488,7 @@ function Test-LockfileDrift {
         }
 
         # NOTE: Lockfile Version is already the resolved exact version, including prerelease labels.
-        $resolvedVersion = ConvertTo-NormalizedVersionString -Version $lockEntry['Version'] -Prerelease $null
+        $resolvedVersion = ConvertTo-NormalizedVersionString -Version $lockEntry['Version']
         if ([string]::IsNullOrWhiteSpace($resolvedVersion)) {
             $versionViolations.Add($name)
             $reasons.Add("Lockfile entry must contain a non-empty Version for '$name'.")
@@ -505,7 +505,7 @@ function Test-LockfileDrift {
             $reasons.Add("Prerelease version is not allowed for '$name': $resolvedVersion")
         }
 
-        $versionConstraint = ConvertTo-NormalizedVersionString -Version $requirementEntry['Version'] -Prerelease $null
+        $versionConstraint = ConvertTo-NormalizedVersionString -Version $requirementEntry['Version']
         if ((-not [string]::IsNullOrWhiteSpace($versionConstraint)) -and (-not (Test-VersionConstraintSatisfied -VersionConstraint $versionConstraint -ResolvedVersion $resolvedVersion))) {
             $versionViolations.Add($name)
             $reasons.Add("Resolved version '$resolvedVersion' does not satisfy version constraint '$versionConstraint' for '$name'.")
