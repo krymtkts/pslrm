@@ -9,6 +9,28 @@ BeforeAll {
     $modulePath = Join-Path $moduleRoot 'pslrm.psm1'
     Import-Module $modulePath -Force
 }
+
+Describe 'Convert-VersionToNormalizedVersionString' {
+    It 'returns null for null version' {
+        InModuleScope pslrm {
+            Convert-VersionToNormalizedVersionString -Version $null | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'trims and normalizes version to string' {
+        InModuleScope pslrm {
+            Convert-VersionToNormalizedVersionString -Version ' 1.2.3 ' | Should -BeExactly '1.2.3'
+            Convert-VersionToNormalizedVersionString -Version ([version]'2.3.4') | Should -BeExactly '2.3.4'
+        }
+    }
+
+    It 'preserves version range expressions' {
+        InModuleScope pslrm {
+            Convert-VersionToNormalizedVersionString -Version '[0.0.1,1.3.0]' | Should -BeExactly '[0.0.1,1.3.0]'
+        }
+    }
+}
+
 Describe 'ConvertTo-NormalizedVersionString' {
     It 'returns null for null version' {
         InModuleScope pslrm {
