@@ -147,6 +147,8 @@ function Resolve-RequirementsToLockData {
             throw "Only PSGallery is supported for Repository. Invalid repository '$repository' returned for '$name'."
         }
 
+        # NOTE: Lockfile schema stores the resolved exact version in Version.
+        # NOTE: PSResourceGet may report prerelease separately; fold it into Version here.
         $normalizedVersion = ConvertTo-NormalizedVersionString -Version $r.Version -Prerelease $r.Prerelease
         $lockData[$name] = @{
             Version = $normalizedVersion
@@ -485,6 +487,7 @@ function Test-LockfileDrift {
             $reasons.Add("Repository mismatch for '$name': requirements=$requirementRepository lockfile=$lockRepository")
         }
 
+        # NOTE: Lockfile Version is already the resolved exact version, including prerelease labels.
         $resolvedVersion = ConvertTo-NormalizedVersionString -Version $lockEntry['Version'] -Prerelease $null
         if ([string]::IsNullOrWhiteSpace($resolvedVersion)) {
             $versionViolations.Add($name)

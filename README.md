@@ -34,6 +34,17 @@ The following keys are commonly used by [PSResourceGet](https://learn.microsoft.
 
 The project root is the directory that contains `psreq.psd1`.
 
+In `psreq.lock.psd1`, each entry is a hashtable keyed by module name.
+pslrm writes the following keys:
+
+- `Version`
+  The resolved exact version string.
+  PSResourceGet may report prerelease versions as separate `Version` and `Prerelease` values, but pslrm folds them into this field.
+  For example, `Version = 6.0.0` and `Prerelease = alpha5` are stored as `6.0.0-alpha5`.
+- `Repository`
+  The repository that provided the resource.
+  pslrm currently writes `PSGallery`.
+
 ## Local directory (default)
 
 By default, pslrm saves resources under the project root at `./.pslrm/`.
@@ -124,9 +135,3 @@ They are build/release tooling dependencies, not runtime dependencies of the `ps
   This keeps host-aware output alive through the async isolated-runspace forwarding path.
   Nested `Invoke-PSLResource` calls use the default nested runspace host.
   This avoids propagating child hosts across nested isolated invocations.
-- NOTE: PSResourceGet models prerelease versions separately from `Version`.
-  Example: `Version = 6.0.0` and `Prerelease = alpha5`.
-  To preserve prerelease info, pslrm stores versions as normalized strings in the lockfile.
-  Example: `6.0.0-alpha5`.
-  Ideally, pslrm would use `[System.Management.Automation.SemanticVersion]`.
-  Windows PowerShell 5.1 does not provide it.
