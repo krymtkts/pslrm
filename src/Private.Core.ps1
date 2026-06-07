@@ -43,6 +43,29 @@ function Get-StorePath {
     Join-Path $ProjectRoot $script:PSLRMStoreDirectoryName
 }
 
+function Convert-VersionToNormalizedVersionString {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object] $Version
+    )
+
+    if ($null -eq $Version) {
+        $null
+    }
+    else {
+        $normalized = if ($Version -is [string]) { $Version } else { $Version.ToString() }
+        if ([string]::IsNullOrWhiteSpace($normalized)) {
+            $null
+        }
+        else {
+            $normalized.Trim()
+        }
+    }
+}
+
 function ConvertTo-NormalizedVersionString {
     [CmdletBinding()]
     [OutputType([string])]
@@ -56,16 +79,10 @@ function ConvertTo-NormalizedVersionString {
         [string] $Prerelease
     )
 
-    if ($null -eq $Version) {
-        return $null
-    }
-
-    $normalized = if ($Version -is [string]) { $Version } else { $Version.ToString() }
+    $normalized = Convert-VersionToNormalizedVersionString -Version $Version
     if ([string]::IsNullOrWhiteSpace($normalized)) {
         return $null
     }
-
-    $normalized = $normalized.Trim()
 
     # NOTE: PSResourceGet reports prerelease separately (Version + Prerelease). Preserve it.
     if (-not [string]::IsNullOrWhiteSpace($Prerelease)) {
