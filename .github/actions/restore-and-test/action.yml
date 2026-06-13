@@ -17,7 +17,7 @@ runs:
       shell: ${{ inputs.shell }}
       if: inputs.shell == 'powershell'
       run: |
-        Install-Module -Name Microsoft.PowerShell.PSResourceGet -Force -Scope CurrentUser -Repository PSGallery -SkipPublisherCheck -AllowPrerelease
+        Install-Module -Name Microsoft.PowerShell.PSResourceGet -Force -Scope CurrentUser -Repository PSGallery -SkipPublisherCheck
         Get-PSResourceRepository
     - name: Restore modules from PSGallery
       shell: ${{ inputs.shell }}
