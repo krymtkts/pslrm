@@ -9,8 +9,9 @@ concurrency:
   group: bump-dependencies
   cancel-in-progress: false
 
-# NOTE: no permissions are needed.
-permissions: {}
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   bump:
