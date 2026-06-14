@@ -18,10 +18,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: main
-          # NOTE: to trigger the workflow on a push to the bump branch.
-          token: ${{ secrets.PSLRM_BUMP_TOKEN }}
       - name: Bump dependencies
         shell: pwsh
         run: |
@@ -43,7 +39,7 @@ jobs:
       - name: Create or update pull request
         if: steps.lockfile.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.PSLRM_BUMP_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           git config user.name 'github-actions[bot]'
