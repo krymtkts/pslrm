@@ -19,10 +19,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Prepare PSResourceRepository
+        shell: pwsh
+        # NOTE: This is a workaround for PSResourceGet failing to load the repository store, which causes the following error:
+        # Cannot retrieve the dynamic parameters for the cmdlet. Loading
+        # repository store failed: Could not find a part of the path
+        # '/home/runner/.local/share/PSResourceGet/PSResourceRepository.xml'.
+        run: |
+          Get-PSResourceRepository -Name PSGallery | Out-Null
+          Set-PSResourceRepository -Name PSGallery -Trusted -ApiVersion V2
       - name: Bump dependencies
         shell: pwsh
         run: |
-          Set-PSResourceRepository PSGallery -Trusted
           Import-Module ./pslrm.psd1 -Force
           Update-PSLResource
       - name: Detect lockfile changes
