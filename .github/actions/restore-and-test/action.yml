@@ -18,11 +18,18 @@ runs:
       if: inputs.shell == 'powershell'
       run: |
         Install-Module -Name Microsoft.PowerShell.PSResourceGet -Force -Scope CurrentUser -Repository PSGallery -SkipPublisherCheck
-        Get-PSResourceRepository
+    - name: Prepare PSResourceRepository
+      # NOTE: This is a workaround for PSResourceGet failing to load the repository store, which causes the following error:
+      # Cannot retrieve the dynamic parameters for the cmdlet. Loading
+      # repository store failed: Could not find a part of the path
+      # '/home/runner/.local/share/PSResourceGet/PSResourceRepository.xml'.
+      shell: ${{ inputs.shell }}
+      run: |
+        Get-PSResourceRepository -Name PSGallery
+        Set-PSResourceRepository -Name PSGallery -Trusted -ApiVersion V2
     - name: Restore modules from PSGallery
       shell: ${{ inputs.shell }}
       run: |
-        Set-PSResourceRepository PSGallery -Trusted
         Import-Module ./pslrm.psd1 -Force
         Restore-PSLResource
     - name: Execute All Tests

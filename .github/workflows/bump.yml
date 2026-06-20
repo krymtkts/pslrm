@@ -13,21 +13,30 @@ permissions:
   contents: write
   pull-requests: write
 
+defaults:
+  run:
+    shell: pwsh
+
 jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Bump dependencies
-        shell: pwsh
+      - name: Prepare PSResourceRepository
+        # NOTE: This is a workaround for PSResourceGet failing to load the repository store, which causes the following error:
+        # Cannot retrieve the dynamic parameters for the cmdlet. Loading
+        # repository store failed: Could not find a part of the path
+        # '/home/runner/.local/share/PSResourceGet/PSResourceRepository.xml'.
         run: |
-          Set-PSResourceRepository PSGallery -Trusted
+          Get-PSResourceRepository -Name PSGallery
+          Set-PSResourceRepository -Name PSGallery -Trusted -ApiVersion V2
+      - name: Bump dependencies
+        run: |
           Import-Module ./pslrm.psd1 -Force
           Update-PSLResource
       - name: Detect lockfile changes
         id: lockfile
-        shell: pwsh
         run: |
           $diff = git status --porcelain -- psreq.lock.psd1
           if ($diff) {
@@ -41,7 +50,6 @@ jobs:
         if: steps.lockfile.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
