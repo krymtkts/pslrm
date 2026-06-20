@@ -29,7 +29,7 @@ jobs:
         # repository store failed: Could not find a part of the path
         # '/home/runner/.local/share/PSResourceGet/PSResourceRepository.xml'.
         run: |
-          Get-PSResourceRepository -Name PSGallery | Out-Null
+          Get-PSResourceRepository -Name PSGallery
           Set-PSResourceRepository -Name PSGallery -Trusted -ApiVersion V2
       - name: Bump dependencies
         run: |
