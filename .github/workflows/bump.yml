@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Prepare PSResourceRepository
         # NOTE: This is a workaround for PSResourceGet failing to load the repository store, which causes the following error:
         # Cannot retrieve the dynamic parameters for the cmdlet. Loading
