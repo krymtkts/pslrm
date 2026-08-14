@@ -154,6 +154,8 @@ Task Lint Build, {
         $issues
         throw 'Invoke-ScriptAnalyzer reported issues.'
     }
+
+    Assert-KeepAChangelogReleaseMetadata -Path $ChangelogPath -Version 'Unreleased'
 }
 
 Task UnitTest Lint, {
