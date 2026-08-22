@@ -39,11 +39,12 @@ pslrm writes the following keys:
 
 - `Version`
   The resolved exact version string.
-  PSResourceGet may report prerelease versions as separate `Version` and `Prerelease` values, but pslrm folds them into this field.
-  For example, `Version = 6.0.0` and `Prerelease = alpha5` are stored as `6.0.0-alpha5`.
+  PSResourceGet may report prerelease versions as separate `Version` and `Prerelease` values.
+  pslrm folds both values into this field.
+  For example, pslrm stores `Version = 6.0.0` and `Prerelease = alpha5` as `6.0.0-alpha5`.
 - `Repository`
   The repository that provided the resource.
-  pslrm currently writes `PSGallery`.
+  pslrm writes `PSGallery`.
 
 ## Local directory (default)
 
