@@ -204,6 +204,42 @@ Describe 'Invoke-PSLResource' {
         }
     }
 
+    It 'normalizes typed collections across PowerShell argument binding behaviors' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedArgumentTokens = $ArgumentTokens
+            }
+
+            $collections = [object[]]::new(2)
+            $collections[0] = [int[]] @(1, 2)
+            $collections[1] = [System.Collections.Generic.List[string]] @('one', 'two')
+
+            foreach ($collection in $collections) {
+                Invoke-PSLResource Invoke-Probe $collection
+
+                $script:capturedArgumentTokens.Count | Should -Be 2
+                $script:capturedArgumentTokens | Should -Be @($collection)
+            }
+        }
+    }
+
+    It 'preserves a hashtable as a scalar natural argument' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedArgumentTokens = $ArgumentTokens
+            }
+
+            $hashtable = @{ Name = 'value' }
+
+            Invoke-PSLResource Invoke-Probe $hashtable
+
+            $script:capturedArgumentTokens.Count | Should -Be 1
+            [object]::ReferenceEquals($script:capturedArgumentTokens[0], $hashtable) | Should -BeTrue
+        }
+    }
+
     # NOTE: This verifies that the pre-6.2 outer array is removed exactly once and that current PowerShell input is not unwrapped.
     It 'preserves a nested array in natural arguments' {
         InModuleScope pslrm {

@@ -230,7 +230,7 @@ function Invoke-PSLResource {
             $PSVersionTable.PSVersion -lt [version]'6.2' -and
             $null -ne $RemainingArgumentTokens -and
             $RemainingArgumentTokens.Count -eq 1 -and
-            $RemainingArgumentTokens[0] -is [object[]]
+            $null -ne [System.Management.Automation.LanguagePrimitives]::GetEnumerable($RemainingArgumentTokens[0])
         ) {
             $ArgumentTokens = [object[]] $RemainingArgumentTokens[0]
         }
