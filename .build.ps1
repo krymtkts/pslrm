@@ -90,6 +90,7 @@ $ChangelogPath = Join-Path $PSScriptRoot 'CHANGELOG.md'
 $ModulePublishPath = Join-Path $PSScriptRoot (Join-Path 'publish' $ModuleName)
 $PublishModuleManifest = Join-Path $ModulePublishPath "${ModuleName}.psd1"
 $MarkdownHelpPath = (Resolve-Path (Join-Path $PSScriptRoot (Join-Path 'docs' $ModuleName))).Path
+$ModulePagePath = Join-Path $MarkdownHelpPath "${ModuleName}.md"
 $ExternalHelpFileName = "${ModuleName}-Help.xml"
 $ExternalHelpPath = Join-Path $PSScriptRoot $ExternalHelpFileName
 $FullChangelogUrl = 'https://github.com/krymtkts/pslrm/blob/main/CHANGELOG.md'
@@ -180,6 +181,38 @@ Task Lint Build, {
     }
 
     Assert-KeepAChangelogReleaseMetadata -Path $ChangelogPath -Version 'Unreleased'
+
+    Write-Host 'Validating external help sources and generated MAML.' -ForegroundColor Yellow
+
+    'Import-MarkdownModuleFile' | Assert-CommandAvailable
+
+    $exportedCommandNames = @((Import-PowerShellDataFile -Path $ModuleManifest.FullName).FunctionsToExport)
+    $markdownCommandNames = @(Get-ValidMarkdownCommandHelp | ForEach-Object Title)
+    $markdownNameDifference = @(Compare-Object -ReferenceObject $exportedCommandNames -DifferenceObject $markdownCommandNames -CaseSensitive)
+    if ($markdownNameDifference.Count -gt 0) {
+        $markdownNameDifference
+        throw 'Markdown command help names do not match FunctionsToExport.'
+    }
+
+    $modulePage = Import-MarkdownModuleFile -LiteralPath $ModulePagePath
+    if ($modulePage.Diagnostics.HadErrors) {
+        $modulePage.Diagnostics.Messages
+        throw 'Invalid Markdown module page.'
+    }
+
+    if (-not (Test-Path -LiteralPath $ExternalHelpPath -PathType Leaf)) {
+        throw "Generated MAML file not found: $ExternalHelpPath"
+    }
+
+    $maml = [xml](Get-Content -LiteralPath $ExternalHelpPath -Raw)
+    $namespaceManager = [System.Xml.XmlNamespaceManager]::new($maml.NameTable)
+    $namespaceManager.AddNamespace('command', 'http://schemas.microsoft.com/maml/dev/command/2004/10')
+    $mamlCommandNames = @($maml.SelectNodes('//command:command/command:details/command:name', $namespaceManager).InnerText)
+    $mamlNameDifference = @(Compare-Object -ReferenceObject $exportedCommandNames -DifferenceObject $mamlCommandNames -CaseSensitive)
+    if ($mamlNameDifference.Count -gt 0) {
+        $mamlNameDifference
+        throw 'MAML command help names do not match FunctionsToExport.'
+    }
 }
 
 Task UnitTest Lint, {
