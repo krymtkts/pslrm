@@ -6,13 +6,61 @@ BeforeAll {
         (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
     }
 
+    $script:ModuleRoot = $moduleRoot
     $modulePath = Join-Path $moduleRoot 'pslrm.psd1'
+    $script:ExternalHelpPath = Join-Path $moduleRoot 'pslrm-Help.xml'
+    $script:PublicCommandNames = @((Import-PowerShellDataFile -Path $modulePath).FunctionsToExport)
+    $script:CommonParameterNames = @(
+        'Debug'
+        'ErrorAction'
+        'ErrorVariable'
+        'InformationAction'
+        'InformationVariable'
+        'OutBuffer'
+        'OutVariable'
+        'PipelineVariable'
+        'ProgressAction'
+        'Verbose'
+        'WarningAction'
+        'WarningVariable'
+    )
+    Remove-Module -Name 'pslrm' -Force -ErrorAction SilentlyContinue
     Import-Module $modulePath -Force
 
     $repo = Get-PSResourceRepository -Name 'PSGallery' -ErrorAction Stop
     if ($repo.PSObject.Properties.Name -contains 'Trusted') {
         if (-not [bool]$repo.Trusted) {
             throw 'PSGallery is not trusted. Trust it before running integration tests.'
+        }
+    }
+}
+
+Describe 'Integration: external help' {
+    It 'loads external help for every public command' {
+        (Get-Module -Name 'pslrm').ModuleBase | Should -BeExactly $script:ModuleRoot
+        $script:ExternalHelpPath | Should -Exist
+
+        foreach ($commandName in $script:PublicCommandNames) {
+            $help = Get-Help -Name $commandName -Full
+
+            $help.Synopsis | Should -Not -BeNullOrEmpty
+            $help.Description.Text | Should -Not -BeNullOrEmpty
+            $help.Examples.Example | Should -Not -BeNullOrEmpty
+            $helpParameters = @($help.Parameters.Parameter)
+            $commandParameterNames = @(
+                (Get-Command -Name $commandName).Parameters.Keys |
+                    Where-Object { $_ -notin $script:CommonParameterNames }
+            )
+            @(Compare-Object -ReferenceObject $commandParameterNames -DifferenceObject $helpParameters.Name -CaseSensitive) |
+                Should -BeNullOrEmpty
+            foreach ($parameter in $helpParameters) {
+                $parameter.Description.Text | Should -Not -BeNullOrEmpty
+            }
+            $navigationLinks = @($help.RelatedLinks.NavigationLink)
+            $navigationLinks | Should -Not -BeNullOrEmpty
+            foreach ($link in $navigationLinks) {
+                $link.Uri | Should -Match '^https://github\.com/krymtkts/pslrm/blob/main/docs/pslrm/'
+            }
         }
     }
 }

@@ -229,12 +229,13 @@ Task UnitTest Lint, {
     Invoke-TestTask @Params
 }
 
-Task IntegrationTest Build, {
-    Write-Host 'Running integration tests.' -ForegroundColor Yellow
+Task IntegrationTest Stage, {
+    Write-Host 'Running integration tests against staged module artifacts.' -ForegroundColor Yellow
 
     $Params = @{
         TestPath = 'tests/integration'
         TestResultOutputPath = 'testResults.integration.xml'
+        ModuleRoot = $ModulePublishPath
     }
     if (-not $DisableCoverage) {
         $Params.CoverageOutputPath = 'coverage.integration.xml'
@@ -335,6 +336,7 @@ Task Stage Build, {
 
     Copy-Item -LiteralPath $ModuleManifest.FullName -Destination $PublishModuleManifest -Force
     Copy-Item -LiteralPath $ModuleScript.FullName -Destination (Join-Path $ModulePublishPath $ModuleScript.Name) -Force
+    Copy-Item -LiteralPath $ExternalHelpPath -Destination (Join-Path $ModulePublishPath $ExternalHelpFileName) -Force
     Copy-Item -LiteralPath $ModuleSrcPath -Destination (Join-Path $ModulePublishPath 'src') -Recurse -Force
 }
 
