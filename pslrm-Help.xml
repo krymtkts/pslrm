@@ -1,0 +1,1001 @@
+<?xml version="1.0" encoding="utf-8"?>
+<helpItems xmlns:maml="http://schemas.microsoft.com/maml/2004/10" xmlns:command="http://schemas.microsoft.com/maml/dev/command/2004/10" xmlns:dev="http://schemas.microsoft.com/maml/dev/2004/10" schema="maml" xmlns="http://msh">
+  <command:command>
+    <command:details>
+      <command:name>Get-InstalledPSLResource</command:name>
+      <maml:description>
+        <maml:para>List resources recorded in the project lockfile.</maml:para>
+      </maml:description>
+      <command:verb>Get</command:verb>
+      <command:noun>InstalledPSLResource</command:noun>
+    </command:details>
+    <maml:description>
+      <maml:para>Reads `psreq.psd1` and `psreq.lock.psd1` from the project root and returns the locked direct resources.
+Use `IncludeDependencies` to include transitive dependencies recorded in the lockfile.
+
+This command reads project metadata without resolving dependencies.
+It leaves the project-local store unchanged.</maml:para>
+    </maml:description>
+    <command:syntax>
+      <command:syntaxItem>
+        <maml:name>Get-InstalledPSLResource</maml:name>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+          <maml:name>Path</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>IncludeDependencies</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+      </command:syntaxItem>
+    </command:syntax>
+    <command:parameters>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="none">
+        <maml:name>IncludeDependencies</maml:name>
+        <maml:description>
+          <maml:para>Includes transitive dependencies recorded in the lockfile.
+By default, the command returns direct resources declared in `psreq.psd1`.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+        <maml:name>Path</maml:name>
+        <maml:description>
+          <maml:para>The project root or a directory below it.
+The command searches parent directories for `psreq.psd1`.
+The default is the current directory.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String</maml:name>
+        </dev:type>
+      </command:parameter>
+    </command:parameters>
+    <command:inputTypes />
+    <command:returnValues>
+      <command:returnValue>
+        <dev:type>
+          <maml:name>System.Object</maml:name>
+        </dev:type>
+        <maml:description>
+          <maml:para>Returns `PSLRM.Resource` objects containing resource identity and project information.
+Resource properties include `Name`, `Version`, and `Repository`.
+Project properties include `IsDirect` and `ProjectRoot`.</maml:para>
+        </maml:description>
+      </command:returnValue>
+    </command:returnValues>
+    <maml:alertSet>
+      <maml:alert>
+        <maml:para>The result reflects the lockfile and does not verify that each resource exists under `.pslrm`.</maml:para>
+      </maml:alert>
+    </maml:alertSet>
+    <command:examples>
+      <command:example>
+        <maml:title>--------- Example 1 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Get-InstalledPSLResource
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Lists direct resources from the pslrm project containing the current directory.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+      <command:example>
+        <maml:title>--------- Example 2 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Get-InstalledPSLResource -Path ./tools -IncludeDependencies
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Finds the project root above `./tools` and lists direct and transitive resources.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+    </command:examples>
+    <command:relatedLinks>
+      <maml:navigationLink>
+        <maml:linkText>Online Version</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Get-InstalledPSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>pslrm Module</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/pslrm.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Install-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Install-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Update-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Update-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Restore-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Restore-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+    </command:relatedLinks>
+  </command:command>
+  <command:command>
+    <command:details>
+      <command:name>Install-PSLResource</command:name>
+      <maml:description>
+        <maml:para>Install project-local resources from the lockfile or requirements.</maml:para>
+      </maml:description>
+      <command:verb>Install</command:verb>
+      <command:noun>PSLResource</command:noun>
+    </command:details>
+    <maml:description>
+      <maml:para>Installs resources under `.pslrm` in the project root.
+
+The command restores exact versions when `psreq.lock.psd1` exists and matches `psreq.psd1`.
+Without a lockfile, it resolves `psreq.psd1` and writes a new lockfile.
+It then saves the resolved resources.
+
+Use `Update-PSLResource` when requirements and the lockfile are out of sync.</maml:para>
+    </maml:description>
+    <command:syntax>
+      <command:syntaxItem>
+        <maml:name>Install-PSLResource</maml:name>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+          <maml:name>Path</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>IncludeDependencies</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>WhatIf</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>Confirm</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+      </command:syntaxItem>
+    </command:syntax>
+    <command:parameters>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="cf">
+        <maml:name>Confirm</maml:name>
+        <maml:description>
+          <maml:para>Prompts you for confirmation before running the cmdlet.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="none">
+        <maml:name>IncludeDependencies</maml:name>
+        <maml:description>
+          <maml:para>Includes transitive dependencies in the output.
+The command always saves the dependencies needed by the locked resources.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+        <maml:name>Path</maml:name>
+        <maml:description>
+          <maml:para>The project root or a directory below it.
+The command searches parent directories for `psreq.psd1`.
+The default is the current directory.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="wi">
+        <maml:name>WhatIf</maml:name>
+        <maml:description>
+          <maml:para>Reports what would happen without performing the actions.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+    </command:parameters>
+    <command:inputTypes />
+    <command:returnValues>
+      <command:returnValue>
+        <dev:type>
+          <maml:name>System.Object</maml:name>
+        </dev:type>
+        <maml:description>
+          <maml:para>Returns the installed direct resources as `PSLRM.Resource` objects.
+With `IncludeDependencies`, the result also contains transitive resources.</maml:para>
+        </maml:description>
+      </command:returnValue>
+    </command:returnValues>
+    <maml:alertSet>
+      <maml:alert>
+        <maml:para>The command fails instead of restoring a stale lockfile.
+Run `Update-PSLResource` to resolve the current requirements and refresh the lockfile.</maml:para>
+      </maml:alert>
+    </maml:alertSet>
+    <command:examples>
+      <command:example>
+        <maml:title>--------- Example 1 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Install-PSLResource
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Installs resources for the pslrm project containing the current directory.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+      <command:example>
+        <maml:title>--------- Example 2 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Install-PSLResource -Path ./build -IncludeDependencies
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Finds the project root above `./build` and installs its resources.
+The result contains direct and transitive resources.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+    </command:examples>
+    <command:relatedLinks>
+      <maml:navigationLink>
+        <maml:linkText>Online Version</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Install-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>pslrm Module</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/pslrm.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Get-InstalledPSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Get-InstalledPSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Update-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Update-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Restore-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Restore-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+    </command:relatedLinks>
+  </command:command>
+  <command:command>
+    <command:details>
+      <command:name>Invoke-PSLResource</command:name>
+      <maml:description>
+        <maml:para>Run a command exported by a project-local resource.</maml:para>
+      </maml:description>
+      <command:verb>Invoke</command:verb>
+      <command:noun>PSLResource</command:noun>
+    </command:details>
+    <maml:description>
+      <maml:para>Runs a command exported by a resource recorded in the project lockfile.
+The command executes in an isolated runspace configured with the project-local store.
+It uses the project root as its current directory.
+
+Use the natural parameter set to forward trailing argument tokens directly.
+Use `ArgumentTokens` when code constructs the token array explicitly.</maml:para>
+    </maml:description>
+    <command:syntax>
+      <command:syntaxItem>
+        <maml:name>Invoke-PSLResource</maml:name>
+        <command:parameter required="true" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>CommandName</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="Arguments">
+          <maml:name>ArgumentTokens</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">Object[]</command:parameterValue>
+          <dev:type>
+            <maml:name>System.Object[]</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>Path</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>ExecutionScope</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+      </command:syntaxItem>
+      <command:syntaxItem>
+        <maml:name>Invoke-PSLResource</maml:name>
+        <command:parameter required="true" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+          <maml:name>CommandName</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="1" aliases="none">
+          <maml:name>RemainingArgumentTokens</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">Object[]</command:parameterValue>
+          <dev:type>
+            <maml:name>System.Object[]</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>Path</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>ExecutionScope</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+      </command:syntaxItem>
+    </command:syntax>
+    <command:parameters>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="Arguments">
+        <maml:name>ArgumentTokens</maml:name>
+        <maml:description>
+          <maml:para>The ordered argument tokens to pass to the target command.
+Use this parameter when code constructs the tokens explicitly.
+`Arguments` is an alias for this parameter.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.Object[]</command:parameterValue>
+        <dev:type>
+          <maml:name>System.Object[]</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="true" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+        <maml:name>CommandName</maml:name>
+        <maml:description>
+          <maml:para>The name of a command exported by a single resource in the project-local store.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="none">
+        <maml:name>ExecutionScope</maml:name>
+        <maml:description>
+          <maml:para>The execution isolation mode.
+The default is `IsolatedRunspace`.
+The command accepts `InProcess`, but that mode is not implemented.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="none">
+        <maml:name>Path</maml:name>
+        <maml:description>
+          <maml:para>The project root or a directory below it.
+The command searches parent directories for `psreq.psd1`.
+The default is the current directory.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="1" aliases="none">
+        <maml:name>RemainingArgumentTokens</maml:name>
+        <maml:description>
+          <maml:para>The trailing tokens captured by the natural parameter set and forwarded to the target command.
+Place `--` before tokens that could bind to parameters of `Invoke-PSLResource`.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.Object[]</command:parameterValue>
+        <dev:type>
+          <maml:name>System.Object[]</maml:name>
+        </dev:type>
+      </command:parameter>
+    </command:parameters>
+    <command:inputTypes />
+    <command:returnValues>
+      <command:returnValue>
+        <dev:type>
+          <maml:name>System.Object</maml:name>
+        </dev:type>
+        <maml:description>
+          <maml:para>Returns the output produced by the target command.</maml:para>
+        </maml:description>
+      </command:returnValue>
+    </command:returnValues>
+    <maml:alertSet>
+      <maml:alert>
+        <maml:para>The target command must come from a resource in the project-local store.
+The command fails if no resource exports the name.
+It also fails if more than one resource exports the same name.
+
+The outermost isolated invocation shares the caller host.
+Nested invocations use the default runspace host.</maml:para>
+      </maml:alert>
+    </maml:alertSet>
+    <command:examples>
+      <command:example>
+        <maml:title>--------- Example 1 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Invoke-PSLResource Invoke-Build -- -Task UnitTest '.build.ps1'
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Runs `Invoke-Build` from the project-local store.
+The end-of-parameters token prevents `Invoke-PSLResource` from binding `Task`.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+      <command:example>
+        <maml:title>--------- Example 2 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+$tokens = @('-Task', 'UnitTest', '.build.ps1')
+Invoke-PSLResource -CommandName Invoke-Build -ArgumentTokens $tokens
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Runs the same command with an explicitly constructed argument token array.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+      <command:example>
+        <maml:title>--------- Example 3 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Invoke-PSLResource -Path ./tools Invoke-Pester -- -Path tests
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Finds the project root above `./tools`.
+The command forwards a separate `Path` parameter to the project-local command.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+    </command:examples>
+    <command:relatedLinks>
+      <maml:navigationLink>
+        <maml:linkText>Online Version</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Invoke-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>pslrm Module</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/pslrm.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Get-InstalledPSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Get-InstalledPSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Restore-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Restore-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+    </command:relatedLinks>
+  </command:command>
+  <command:command>
+    <command:details>
+      <command:name>Restore-PSLResource</command:name>
+      <maml:description>
+        <maml:para>Restore project-local resources from the lockfile.</maml:para>
+      </maml:description>
+      <command:verb>Restore</command:verb>
+      <command:noun>PSLResource</command:noun>
+    </command:details>
+    <maml:description>
+      <maml:para>Replaces the `.pslrm` directory with the exact resource versions recorded in `psreq.lock.psd1`.
+The command does not resolve requirements and leaves the lockfile unchanged.
+
+The command reads the requirements file to identify which locked resources are direct dependencies.</maml:para>
+    </maml:description>
+    <command:syntax>
+      <command:syntaxItem>
+        <maml:name>Restore-PSLResource</maml:name>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+          <maml:name>Path</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>IncludeDependencies</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>WhatIf</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>Confirm</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+      </command:syntaxItem>
+    </command:syntax>
+    <command:parameters>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="cf">
+        <maml:name>Confirm</maml:name>
+        <maml:description>
+          <maml:para>Prompts you for confirmation before running the cmdlet.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="none">
+        <maml:name>IncludeDependencies</maml:name>
+        <maml:description>
+          <maml:para>Includes transitive dependencies in the output.
+The command always restores all resources recorded in the lockfile.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+        <maml:name>Path</maml:name>
+        <maml:description>
+          <maml:para>The project root or a directory below it.
+The command searches parent directories for `psreq.psd1`.
+The default is the current directory.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="wi">
+        <maml:name>WhatIf</maml:name>
+        <maml:description>
+          <maml:para>Reports what would happen without performing the actions.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+    </command:parameters>
+    <command:inputTypes />
+    <command:returnValues>
+      <command:returnValue>
+        <dev:type>
+          <maml:name>System.Object</maml:name>
+        </dev:type>
+        <maml:description>
+          <maml:para>Returns the restored direct resources as `PSLRM.Resource` objects.
+With `IncludeDependencies`, the result also contains transitive resources.</maml:para>
+        </maml:description>
+      </command:returnValue>
+    </command:returnValues>
+    <maml:alertSet>
+      <maml:alert>
+        <maml:para>The command fails when `psreq.lock.psd1` is missing.
+Run `Update-PSLResource` to create a lockfile from the current requirements.</maml:para>
+      </maml:alert>
+    </maml:alertSet>
+    <command:examples>
+      <command:example>
+        <maml:title>--------- Example 1 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Restore-PSLResource
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Restores project-local resources for the pslrm project containing the current directory.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+      <command:example>
+        <maml:title>--------- Example 2 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Restore-PSLResource -Path . -IncludeDependencies
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Restores exact locked versions and returns direct and transitive resources.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+    </command:examples>
+    <command:relatedLinks>
+      <maml:navigationLink>
+        <maml:linkText>Online Version</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Restore-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>pslrm Module</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/pslrm.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Get-InstalledPSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Get-InstalledPSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Install-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Install-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Update-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Update-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+    </command:relatedLinks>
+  </command:command>
+  <command:command>
+    <command:details>
+      <command:name>Uninstall-PSLResource</command:name>
+      <maml:description>
+        <maml:para>Remove direct resources from a pslrm project.</maml:para>
+      </maml:description>
+      <command:verb>Uninstall</command:verb>
+      <command:noun>PSLResource</command:noun>
+    </command:details>
+    <maml:description>
+      <maml:para>Removes the specified direct dependencies from `psreq.psd1`.
+The command resolves the remaining requirements and rewrites `psreq.lock.psd1`.
+It then replaces the project-local store.
+
+If no requirements remain, the command writes an empty lockfile.
+The project then has no local resource store.</maml:para>
+    </maml:description>
+    <command:syntax>
+      <command:syntaxItem>
+        <maml:name>Uninstall-PSLResource</maml:name>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+          <maml:name>Path</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="true" variableLength="false" globbing="false" pipelineInput="false" position="1" aliases="none">
+          <maml:name>Name</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string[]</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String[]</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>WhatIf</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>Confirm</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+      </command:syntaxItem>
+    </command:syntax>
+    <command:parameters>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="cf">
+        <maml:name>Confirm</maml:name>
+        <maml:description>
+          <maml:para>Prompts you for confirmation before running the cmdlet.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="true" variableLength="false" globbing="false" pipelineInput="false" position="1" aliases="none">
+        <maml:name>Name</maml:name>
+        <maml:description>
+          <maml:para>The names of direct dependencies to remove.
+Every name must exist in `psreq.psd1`.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String[]</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String[]</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+        <maml:name>Path</maml:name>
+        <maml:description>
+          <maml:para>The project root or a directory below it.
+The command searches parent directories for `psreq.psd1`.
+The default is the current directory.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="wi">
+        <maml:name>WhatIf</maml:name>
+        <maml:description>
+          <maml:para>Reports what would happen without performing the actions.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+    </command:parameters>
+    <command:inputTypes />
+    <command:returnValues>
+      <command:returnValue>
+        <dev:type>
+          <maml:name>System.Object</maml:name>
+        </dev:type>
+        <maml:description>
+          <maml:para>Returns the remaining direct resources as `PSLRM.Resource` objects.
+The command returns no objects when no requirements remain.</maml:para>
+        </maml:description>
+      </command:returnValue>
+    </command:returnValues>
+    <maml:alertSet>
+      <maml:alert>
+        <maml:para>This command removes requirements, not arbitrary transitive dependencies.
+PSResourceGet determines the transitive dependencies of the remaining direct resources.</maml:para>
+      </maml:alert>
+    </maml:alertSet>
+    <command:examples>
+      <command:example>
+        <maml:title>--------- Example 1 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Uninstall-PSLResource -Name Pester
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Removes `Pester` from the pslrm project containing the current directory.
+The command rebuilds the lockfile and local store.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+      <command:example>
+        <maml:title>--------- Example 2 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Uninstall-PSLResource -Path ./build -Name Pester, PSScriptAnalyzer
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Finds the project root above `./build` and removes two direct dependencies.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+    </command:examples>
+    <command:relatedLinks>
+      <maml:navigationLink>
+        <maml:linkText>Online Version</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Uninstall-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>pslrm Module</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/pslrm.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Get-InstalledPSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Get-InstalledPSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Install-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Install-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Update-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Update-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+    </command:relatedLinks>
+  </command:command>
+  <command:command>
+    <command:details>
+      <command:name>Update-PSLResource</command:name>
+      <maml:description>
+        <maml:para>Resolve requirements and update the project lockfile and local store.</maml:para>
+      </maml:description>
+      <command:verb>Update</command:verb>
+      <command:noun>PSLResource</command:noun>
+    </command:details>
+    <maml:description>
+      <maml:para>Resolves every direct dependency declared in `psreq.psd1`.
+The command writes the resulting exact versions to `psreq.lock.psd1`.
+It then replaces the project-local store with the resolved resources.
+
+Use this command after changing requirements or when intentionally updating dependency versions.</maml:para>
+    </maml:description>
+    <command:syntax>
+      <command:syntaxItem>
+        <maml:name>Update-PSLResource</maml:name>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+          <maml:name>Path</maml:name>
+          <maml:description />
+          <command:parameterValue required="true" variableLength="false">string</command:parameterValue>
+          <dev:type>
+            <maml:name>System.String</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>IncludeDependencies</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>WhatIf</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+        <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="named" aliases="none">
+          <maml:name>Confirm</maml:name>
+          <maml:description />
+          <dev:type>
+            <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+          </dev:type>
+        </command:parameter>
+      </command:syntaxItem>
+    </command:syntax>
+    <command:parameters>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="cf">
+        <maml:name>Confirm</maml:name>
+        <maml:description>
+          <maml:para>Prompts you for confirmation before running the cmdlet.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="none">
+        <maml:name>IncludeDependencies</maml:name>
+        <maml:description>
+          <maml:para>Includes transitive dependencies in the output.
+The command always records and saves the dependencies returned by PSResourceGet.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="0" aliases="none">
+        <maml:name>Path</maml:name>
+        <maml:description>
+          <maml:para>The project root or a directory below it.
+The command searches parent directories for `psreq.psd1`.
+The default is the current directory.</maml:para>
+        </maml:description>
+        <command:parameterValue required="true" variableLength="true">System.String</command:parameterValue>
+        <dev:type>
+          <maml:name>System.String</maml:name>
+        </dev:type>
+      </command:parameter>
+      <command:parameter required="false" variableLength="false" globbing="false" pipelineInput="false" position="Named" aliases="wi">
+        <maml:name>WhatIf</maml:name>
+        <maml:description>
+          <maml:para>Reports what would happen without performing the actions.</maml:para>
+        </maml:description>
+        <dev:type>
+          <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+        </dev:type>
+      </command:parameter>
+    </command:parameters>
+    <command:inputTypes />
+    <command:returnValues>
+      <command:returnValue>
+        <dev:type>
+          <maml:name>System.Object</maml:name>
+        </dev:type>
+        <maml:description>
+          <maml:para>Returns the resolved direct resources as `PSLRM.Resource` objects.
+With `IncludeDependencies`, the result also contains transitive resources.</maml:para>
+        </maml:description>
+      </command:returnValue>
+    </command:returnValues>
+    <maml:alertSet>
+      <maml:alert>
+        <maml:para>This command uses requirements as its source of truth.
+Use `Restore-PSLResource` to reproduce the versions already recorded in the lockfile.</maml:para>
+      </maml:alert>
+    </maml:alertSet>
+    <command:examples>
+      <command:example>
+        <maml:title>--------- Example 1 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Update-PSLResource
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Resolves requirements for the pslrm project containing the current directory.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+      <command:example>
+        <maml:title>--------- Example 2 ---------</maml:title>
+        <maml:introduction>
+          <maml:para>```powershell
+Update-PSLResource -Path . -IncludeDependencies
+```</maml:para>
+          <maml:para>&#x80;</maml:para>
+          <maml:para>Updates the lockfile and local store, then returns direct and transitive resources.</maml:para>
+        </maml:introduction>
+        <dev:code />
+        <dev:remarks />
+      </command:example>
+    </command:examples>
+    <command:relatedLinks>
+      <maml:navigationLink>
+        <maml:linkText>Online Version</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Update-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>pslrm Module</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/pslrm.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Get-InstalledPSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Get-InstalledPSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Install-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Install-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+      <maml:navigationLink>
+        <maml:linkText>Restore-PSLResource</maml:linkText>
+        <maml:uri>https://github.com/krymtkts/pslrm/blob/main/docs/pslrm/Restore-PSLResource.md</maml:uri>
+      </maml:navigationLink>
+    </command:relatedLinks>
+  </command:command>
+</helpItems>
