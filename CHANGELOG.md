@@ -7,6 +7,10 @@ This project uses prerelease versions such as 0.0.1-alpha.
 
 ## [Unreleased]
 
+### Added
+
+- Add natural argument forwarding to `Invoke-PSLResource` with `-ArgumentTokens` for arrays.
+
 ## [0.0.1] - 2026-05-30
 
 ### Changed

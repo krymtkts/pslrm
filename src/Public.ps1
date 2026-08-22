@@ -196,17 +196,23 @@ function Restore-PSLResource {
 }
 
 function Invoke-PSLResource {
-    [CmdletBinding()]
+    # NOTE: Disable implicit positions so Path and ExecutionScope cannot consume forwarded arguments.
+    [CmdletBinding(DefaultParameterSetName = 'Explicit', PositionalBinding = $false)]
     [OutputType([object])]
     param(
-        [Parameter(Mandatory)]
+        [Parameter(Mandatory, ParameterSetName = 'Explicit')]
+        [Parameter(Mandatory, Position = 0, ParameterSetName = 'Natural')]
         [ValidateNotNullOrEmpty()]
         [string] $CommandName,
 
-        [Parameter()]
+        [Parameter(ParameterSetName = 'Explicit')]
         [Alias('Arguments')]
         [AllowNull()]
         [object[]] $ArgumentTokens,
+
+        [Parameter(Position = 1, ValueFromRemainingArguments, ParameterSetName = 'Natural')]
+        [AllowNull()]
+        [object[]] $RemainingArgumentTokens,
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -216,6 +222,22 @@ function Invoke-PSLResource {
         [ValidateSet('IsolatedRunspace', 'InProcess')]
         [string] $ExecutionScope = 'IsolatedRunspace'
     )
+
+    if ($PSCmdlet.ParameterSetName -eq 'Natural') {
+        # NOTE: PowerShell versions earlier than 6.2 add an outer object array when the
+        # remaining input is a single collection.
+        if (
+            $PSVersionTable.PSVersion -lt [version]'6.2' -and
+            $null -ne $RemainingArgumentTokens -and
+            $RemainingArgumentTokens.Count -eq 1 -and
+            $null -ne [System.Management.Automation.LanguagePrimitives]::GetEnumerable($RemainingArgumentTokens[0])
+        ) {
+            $ArgumentTokens = [object[]] $RemainingArgumentTokens[0]
+        }
+        else {
+            $ArgumentTokens = $RemainingArgumentTokens
+        }
+    }
 
     $projectRoot = Find-ProjectRoot -Path $Path
 

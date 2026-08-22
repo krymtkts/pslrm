@@ -146,6 +146,160 @@ Describe 'Public manifest import' {
 }
 
 Describe 'Invoke-PSLResource' {
+    It 'exposes explicit and natural argument parameter sets' {
+        $parameterSets = (Get-Command -Name 'Invoke-PSLResource').ParameterSets
+        $parameterSets.Name | Should -Contain 'Explicit'
+        $parameterSets.Name | Should -Contain 'Natural'
+
+        $naturalParameters = ($parameterSets | Where-Object Name -EQ 'Natural').Parameters
+        ($naturalParameters | Where-Object Name -EQ 'CommandName').Position | Should -Be 0
+        ($naturalParameters | Where-Object Name -EQ 'RemainingArgumentTokens').Position | Should -Be 1
+        ($naturalParameters | Where-Object Name -EQ 'RemainingArgumentTokens').ValueFromRemainingArguments | Should -BeTrue
+
+        $explicitParameters = ($parameterSets | Where-Object Name -EQ 'Explicit').Parameters
+        ($explicitParameters | Where-Object Name -EQ 'ArgumentTokens').Aliases | Should -Contain 'Arguments'
+    }
+
+    It 'forwards natural arguments after the end-of-parameters token' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedInvocation = [pscustomobject]@{
+                    ProjectRoot = $ProjectRoot
+                    CommandName = $CommandName
+                    ArgumentTokens = $ArgumentTokens
+                }
+            }
+
+            Invoke-PSLResource -Path . Invoke-Probe -- -Path child -ExecutionScope Child -Enabled $false -Count -1 -Verbose
+
+            $script:capturedInvocation.ProjectRoot | Should -BeExactly 'C:\project'
+            $script:capturedInvocation.CommandName | Should -BeExactly 'Invoke-Probe'
+            $script:capturedInvocation.ArgumentTokens | Should -Be @(
+                '-Path',
+                'child',
+                '-ExecutionScope',
+                'Child',
+                '-Enabled',
+                $false,
+                '-Count',
+                -1,
+                '-Verbose'
+            )
+        }
+    }
+
+    # NOTE: Windows PowerShell 5.1 passes this collection with an extra outer array, while PowerShell 7 passes the flat collection directly.
+    It 'normalizes positional arrays across PowerShell argument binding behaviors' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedArgumentTokens = $ArgumentTokens
+            }
+
+            $argumentTokens = '-Task', 'TestAll'
+            Invoke-PSLResource Invoke-Probe $argumentTokens
+
+            $script:capturedArgumentTokens | Should -Be @('-Task', 'TestAll')
+        }
+    }
+
+    It 'normalizes typed collections across PowerShell argument binding behaviors' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedArgumentTokens = $ArgumentTokens
+            }
+
+            $collections = [object[]]::new(2)
+            $collections[0] = [int[]] @(1, 2)
+            $collections[1] = [System.Collections.Generic.List[string]] @('one', 'two')
+
+            foreach ($collection in $collections) {
+                Invoke-PSLResource Invoke-Probe $collection
+
+                $script:capturedArgumentTokens.Count | Should -Be 2
+                $script:capturedArgumentTokens | Should -Be @($collection)
+            }
+        }
+    }
+
+    It 'preserves a hashtable as a scalar natural argument' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedArgumentTokens = $ArgumentTokens
+            }
+
+            $hashtable = @{ Name = 'value' }
+
+            Invoke-PSLResource Invoke-Probe $hashtable
+
+            $script:capturedArgumentTokens.Count | Should -Be 1
+            [object]::ReferenceEquals($script:capturedArgumentTokens[0], $hashtable) | Should -BeTrue
+        }
+    }
+
+    # NOTE: This verifies that the pre-6.2 outer array is removed exactly once and that current PowerShell input is not unwrapped.
+    It 'preserves a nested array in natural arguments' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedArgumentTokens = $ArgumentTokens
+            }
+
+            $nestedArray = @('one', 'two')
+            $remainingArguments = [object[]]::new(1)
+            $remainingArguments[0] = $nestedArray
+
+            Invoke-PSLResource Invoke-Probe $remainingArguments
+
+            $script:capturedArgumentTokens.Count | Should -Be 1
+            [object]::ReferenceEquals($script:capturedArgumentTokens[0], $nestedArray) | Should -BeTrue
+            $script:capturedArgumentTokens[0] | Should -Be @('one', 'two')
+        }
+    }
+
+    It 'supports natural invocation without arguments' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedArgumentTokens = $ArgumentTokens
+            }
+
+            Invoke-PSLResource Invoke-Probe
+
+            $script:capturedArgumentTokens | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'preserves explicit object and nested array arguments' {
+        InModuleScope pslrm {
+            Mock Find-ProjectRoot { 'C:\project' }
+            Mock Invoke-InIsolatedRunspace {
+                $script:capturedArgumentTokens = $ArgumentTokens
+            }
+
+            $hashtable = @{ Name = 'value' }
+            $scriptBlock = { 'value' }
+            $nestedArray = @('one', 'two')
+            $argumentTokens = [object[]]::new(4)
+            $argumentTokens[0] = $hashtable
+            $argumentTokens[1] = $scriptBlock
+            $argumentTokens[2] = $nestedArray
+            $argumentTokens[3] = $null
+
+            Invoke-PSLResource -CommandName Invoke-Probe -ArgumentTokens $argumentTokens
+
+            $script:capturedArgumentTokens.Count | Should -Be 4
+            [object]::ReferenceEquals($script:capturedArgumentTokens[0], $hashtable) | Should -BeTrue
+            [object]::ReferenceEquals($script:capturedArgumentTokens[1], $scriptBlock) | Should -BeTrue
+            [object]::ReferenceEquals($script:capturedArgumentTokens[2], $nestedArray) | Should -BeTrue
+            $script:capturedArgumentTokens[2] | Should -Be @('one', 'two')
+            $script:capturedArgumentTokens[3] | Should -BeNullOrEmpty
+        }
+    }
+
     It 'invokes a local command in an isolated runspace and preserves named arguments' {
         InModuleScope pslrm {
             $root = Join-Path $TestDrive 'proj-invoke-success'
@@ -228,6 +382,12 @@ Export-ModuleMember -Function 'Invoke-ForwardedBuildLikeCommand'
             $actual.Task | Should -BeExactly 'UnitTest'
             $actual.Path | Should -BeExactly '.build.ps1'
             $actual.RemainingArguments | Should -Be @('-DisableCoverage')
+
+            $naturalActual = Invoke-PSLResource -Path $root Invoke-ForwardedBuildLikeCommand -- -Task UnitTest '.build.ps1' -DisableCoverage
+
+            $naturalActual.Task | Should -BeExactly 'UnitTest'
+            $naturalActual.Path | Should -BeExactly '.build.ps1'
+            $naturalActual.RemainingArguments | Should -Be @('-DisableCoverage')
         }
     }
 
@@ -272,6 +432,12 @@ Export-ModuleMember -Function 'Invoke-InlineBooleanProbe'
             $actual.Enabled | Should -BeFalse
             $actual.Path | Should -BeExactly '.build.ps1'
             $actual.RemainingArguments | Should -Be @('-DisableCoverage')
+
+            $naturalActual = Invoke-PSLResource -Path $root Invoke-InlineBooleanProbe -- -Enabled $false '.build.ps1' -DisableCoverage
+
+            $naturalActual.Enabled | Should -BeFalse
+            $naturalActual.Path | Should -BeExactly '.build.ps1'
+            $naturalActual.RemainingArguments | Should -Be @('-DisableCoverage')
         }
     }
 
@@ -311,6 +477,11 @@ Export-ModuleMember -Function 'Invoke-NegativeNumberProbe'
 
             $actual.Count | Should -Be -1
             $actual.Path | Should -BeExactly '.build.ps1'
+
+            $naturalActual = Invoke-PSLResource -Path $root Invoke-NegativeNumberProbe -- -Count -1 '.build.ps1'
+
+            $naturalActual.Count | Should -Be -1
+            $naturalActual.Path | Should -BeExactly '.build.ps1'
         }
     }
 

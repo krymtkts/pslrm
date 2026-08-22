@@ -39,11 +39,12 @@ pslrm writes the following keys:
 
 - `Version`
   The resolved exact version string.
-  PSResourceGet may report prerelease versions as separate `Version` and `Prerelease` values, but pslrm folds them into this field.
-  For example, `Version = 6.0.0` and `Prerelease = alpha5` are stored as `6.0.0-alpha5`.
+  PSResourceGet may report prerelease versions as separate `Version` and `Prerelease` values.
+  pslrm folds both values into this field.
+  For example, pslrm stores `Version = 6.0.0` and `Prerelease = alpha5` as `6.0.0-alpha5`.
 - `Repository`
   The repository that provided the resource.
-  pslrm currently writes `PSGallery`.
+  pslrm writes `PSGallery`.
 
 ## Local directory (default)
 
@@ -102,6 +103,22 @@ Use update when you want to apply changes from requirements.
   This is the explicit lockfile-driven restore command.
   If `psreq.lock.psd1` is missing, it errors.
   If `./.pslrm/` exists, it clears the directory before restore.
+- `Invoke-PSLResource`
+  Run a command exported by a project-local resource in an isolated runspace.
+  Use the natural form to write forwarded arguments directly:
+
+  ```powershell
+  Invoke-PSLResource Invoke-Build -- -Task UnitTest '.build.ps1'
+  ```
+
+  Specify pslrm options such as `-Path` and `-ExecutionScope` before the command and `--`.
+  Use `-ArgumentTokens` when code builds an argument token array:
+
+  ```powershell
+  Invoke-PSLResource -CommandName Invoke-Build -ArgumentTokens $argumentTokens
+  ```
+
+  `-Arguments` remains an alias for `-ArgumentTokens`.
 
 ## Command comparison
 
