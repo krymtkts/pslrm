@@ -1,5 +1,11 @@
 # pslrm
 
+[![PowerShell Gallery](https://img.shields.io/powershellgallery/v/pslrm)](https://www.powershellgallery.com/packages/pslrm)
+[![PowerShell Gallery](https://img.shields.io/powershellgallery/dt/pslrm)](https://www.powershellgallery.com/packages/pslrm)
+![Test main status](https://github.com/krymtkts/pslrm/actions/workflows/ci.yml/badge.svg)
+![Top Language](https://img.shields.io/github/languages/top/krymtkts/pslrm?color=%23b845fc)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 pslrm (PowerShell Local Resource Manager) is a thin wrapper for [Microsoft.PowerShell.PSResourceGet](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.psresourceget/?view=powershellget-3.x).
 
 pslrm saves PSResourceGet resources into a directory in your project.
