@@ -420,7 +420,6 @@ Export-ModuleMember -Function 'Get-ConcurrentModulePathValue'
             $ended = @($false, $false)
 
             try {
-                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedModulePath, 'Process')
                 $powerShells[0].AddScript(@'
 param(
     [string] $ModulePath,
@@ -428,6 +427,8 @@ param(
 )
 
 Import-Module -Name $ModulePath -Force
+[PslrmTestImportProbe]::FirstInvocationReady.Set()
+[PslrmTestImportProbe]::ReleaseInvocations.Wait()
 Invoke-PSLResource -Path $ProjectRoot -CommandName 'Get-ConcurrentModulePathValue'
 '@).AddParameter('ModulePath', $modulePath).AddParameter('ProjectRoot', $root) | Out-Null
 
@@ -438,18 +439,24 @@ param(
 )
 
 Import-Module -Name $ModulePath -Force
-[PslrmTestImportProbe]::SecondInvocationStarted.Set()
+[PslrmTestImportProbe]::SecondInvocationReady.Set()
+[PslrmTestImportProbe]::ReleaseInvocations.Wait()
 Invoke-PSLResource -Path $ProjectRoot -CommandName 'Get-ConcurrentModulePathValue'
 '@).AddParameter('ModulePath', $modulePath).AddParameter('ProjectRoot', $root) | Out-Null
 
                 $asyncResults[0] = $powerShells[0].BeginInvoke()
+                [PslrmTestImportProbe]::FirstInvocationReady.Wait(5000) | Should -BeTrue
+                $asyncResults[1] = $powerShells[1].BeginInvoke()
+                [PslrmTestImportProbe]::SecondInvocationReady.Wait(5000) | Should -BeTrue
+
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedModulePath, 'Process')
+                [PslrmTestImportProbe]::ReleaseInvocations.Set()
+
                 $firstImportEntered = [PslrmTestImportProbe]::FirstImportEntered.Wait(5000)
                 if (-not $firstImportEntered) {
                     throw 'The first test import did not start.'
                 }
 
-                $asyncResults[1] = $powerShells[1].BeginInvoke()
-                [PslrmTestImportProbe]::SecondInvocationStarted.Wait(5000) | Should -BeTrue
                 [PslrmTestImportProbe]::SecondImportEntered.Wait(1000) | Should -BeFalse
 
                 [PslrmTestImportProbe]::ReleaseImports.Set()
@@ -469,6 +476,7 @@ Invoke-PSLResource -Path $ProjectRoot -CommandName 'Get-ConcurrentModulePathValu
                     Should -BeExactly $expectedModulePath
             }
             finally {
+                [PslrmTestImportProbe]::ReleaseInvocations.Set()
                 [PslrmTestImportProbe]::ReleaseImports.Set()
                 for ($index = 0; $index -lt $powerShells.Count; $index++) {
                     if ($null -ne $asyncResults[$index] -and -not $ended[$index]) {

@@ -42,8 +42,10 @@ public static class PslrmTestMutexOwner
 public static class PslrmTestImportProbe
 {
     public static readonly ManualResetEventSlim FirstImportEntered = new ManualResetEventSlim(false);
-    public static readonly ManualResetEventSlim SecondInvocationStarted = new ManualResetEventSlim(false);
+    public static readonly ManualResetEventSlim FirstInvocationReady = new ManualResetEventSlim(false);
+    public static readonly ManualResetEventSlim SecondInvocationReady = new ManualResetEventSlim(false);
     public static readonly ManualResetEventSlim SecondImportEntered = new ManualResetEventSlim(false);
+    public static readonly ManualResetEventSlim ReleaseInvocations = new ManualResetEventSlim(false);
     public static readonly ManualResetEventSlim ReleaseImports = new ManualResetEventSlim(false);
 
     private static int importCount;
@@ -53,8 +55,10 @@ public static class PslrmTestImportProbe
     public static void Reset()
     {
         FirstImportEntered.Reset();
-        SecondInvocationStarted.Reset();
+        FirstInvocationReady.Reset();
+        SecondInvocationReady.Reset();
         SecondImportEntered.Reset();
+        ReleaseInvocations.Reset();
         ReleaseImports.Reset();
         Interlocked.Exchange(ref importCount, 0);
         Interlocked.Exchange(ref activeImportCount, 0);
