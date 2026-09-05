@@ -375,6 +375,86 @@ function Get-LockfileResourceNames {
     $names
 }
 
+function Resolve-PslrmLockedModuleManifest {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $StorePath,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Version
+    )
+
+    $moduleStorePath = Join-Path $StorePath $Name
+    $manifestPaths = @()
+
+    if (Test-Path -LiteralPath $moduleStorePath -PathType Container) {
+        try {
+            $manifestPaths = @(
+                Get-ChildItem -LiteralPath $moduleStorePath -Directory -ErrorAction Stop | ForEach-Object {
+                    $manifestPath = Join-Path $_.FullName "$Name.psd1"
+                    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+                        (Resolve-Path -LiteralPath $manifestPath -ErrorAction Stop).Path
+                    }
+                }
+            )
+        }
+        catch {
+            throw "Failed to inspect locked resource '$Name' in local store: $moduleStorePath. Run Restore-PSLResource."
+        }
+    }
+
+    if ($manifestPaths.Count -eq 0) {
+        throw "Locked resource '$Name' was not found in local store: $moduleStorePath. Run Restore-PSLResource."
+    }
+
+    $matchingManifestPaths = [System.Collections.Generic.List[string]]::new()
+    foreach ($manifestPath in $manifestPaths) {
+        try {
+            $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath -ErrorAction Stop
+            if ($manifest -isnot [System.Collections.IDictionary]) {
+                throw 'The module manifest did not contain a dictionary.'
+            }
+
+            $manifestData = [System.Collections.IDictionary] $manifest
+            $privateData = $manifestData['PrivateData']
+            $psData = if ($privateData -is [System.Collections.IDictionary]) {
+                $privateData['PSData']
+            }
+
+            $prerelease = if ($psData -is [System.Collections.IDictionary]) {
+                [string] $psData['Prerelease']
+            }
+
+            $manifestVersion = ConvertTo-NormalizedVersionString -Version $manifestData['ModuleVersion'] -Prerelease $prerelease
+        }
+        catch {
+            throw "Locked resource '$Name' has an invalid module manifest: $manifestPath. Run Restore-PSLResource."
+        }
+
+        if ([string]::Equals($manifestVersion, $Version, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $matchingManifestPaths.Add($manifestPath)
+        }
+    }
+
+    if ($matchingManifestPaths.Count -eq 0) {
+        throw "Locked version '$Version' for resource '$Name' was not found in local store. Run Restore-PSLResource."
+    }
+
+    if ($matchingManifestPaths.Count -gt 1) {
+        throw "Multiple manifests for locked version '$Version' were found for resource '$Name'. Run Restore-PSLResource."
+    }
+
+    $matchingManifestPaths[0]
+}
+
 function Test-PslrmParameterToken {
     [CmdletBinding()]
     [OutputType([bool])]
@@ -608,6 +688,90 @@ function ConvertTo-InvocationArguments {
     }
 }
 
+function Invoke-WithPslrmModulePathLock {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [scriptblock] $ScriptBlock
+    )
+
+    $mutex = $null
+    $mutexOwned = $false
+
+    try {
+        $mutex = [System.Threading.Mutex]::new($false, "pslrm-$PID-PSModulePath")
+
+        try {
+            $null = $mutex.WaitOne()
+            $mutexOwned = $true
+        }
+        catch [System.Threading.AbandonedMutexException] {
+            # NOTE: The current thread owns an abandoned mutex, so release it in the outer finally before failing.
+            $mutexOwned = $true
+            throw 'The PSLRM module path mutex was abandoned. Run the operation again after the previous invocation has exited.'
+        }
+
+        & $ScriptBlock
+    }
+    finally {
+        try {
+            if ($mutexOwned) {
+                $mutex.ReleaseMutex()
+            }
+        }
+        finally {
+            if ($null -ne $mutex) {
+                $mutex.Dispose()
+            }
+        }
+    }
+}
+
+function Invoke-WithPslrmModulePath {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $StorePath,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [scriptblock] $ScriptBlock
+    )
+
+    $modulePathScriptBlock = {
+        $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+        try {
+            $separator = [string][System.IO.Path]::PathSeparator
+            $modulePathEntries = [System.Collections.Generic.List[string]]::new()
+            $modulePathEntries.Add($StorePath)
+
+            if (-not [string]::IsNullOrWhiteSpace($originalModulePath)) {
+                foreach ($entry in ($originalModulePath -split [regex]::Escape($separator))) {
+                    if ([string]::IsNullOrWhiteSpace($entry)) {
+                        continue
+                    }
+
+                    if (-not $modulePathEntries.Contains($entry)) {
+                        $modulePathEntries.Add($entry)
+                    }
+                }
+            }
+
+            [Environment]::SetEnvironmentVariable('PSModulePath', ($modulePathEntries.ToArray() -join $separator), 'Process')
+            & $ScriptBlock
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+        }
+    }.GetNewClosure()
+
+    Invoke-WithPslrmModulePathLock -ScriptBlock $modulePathScriptBlock
+}
+
 function Invoke-PslrmRunspaceCommand {
     [CmdletBinding()]
     [OutputType([object])]
@@ -622,7 +786,7 @@ function Invoke-PslrmRunspaceCommand {
 
         [Parameter(Mandatory)]
         [ValidateNotNull()]
-        [string[]] $ModuleNames,
+        [string[]] $ManifestPaths,
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -635,61 +799,31 @@ function Invoke-PslrmRunspaceCommand {
 
     Set-Location -LiteralPath $ProjectRoot
 
-    $separator = [string][System.IO.Path]::PathSeparator
-    $currentModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
-    $modulePathEntries = [System.Collections.Generic.List[string]]::new()
-    $modulePathEntries.Add($StorePath)
+    $resolvedCommand = Invoke-WithPslrmModulePath -StorePath $StorePath -ScriptBlock {
+        $importedModuleNames = [System.Collections.Generic.List[string]]::new()
 
-    if (-not [string]::IsNullOrWhiteSpace($currentModulePath)) {
-        foreach ($entry in ($currentModulePath -split [regex]::Escape($separator))) {
-            if ([string]::IsNullOrWhiteSpace($entry)) {
-                continue
-            }
-
-            if (-not $modulePathEntries.Contains($entry)) {
-                $modulePathEntries.Add($entry)
-            }
-        }
-    }
-
-    [Environment]::SetEnvironmentVariable('PSModulePath', ($modulePathEntries.ToArray() -join $separator), 'Process')
-
-    $importedModuleNames = [System.Collections.Generic.List[string]]::new()
-    $missingModuleNames = [System.Collections.Generic.List[string]]::new()
-
-    foreach ($moduleName in $ModuleNames) {
-        $availableModules = @(Get-Module -ListAvailable -Name $moduleName)
-        if ($availableModules.Count -eq 0) {
-            $missingModuleNames.Add($moduleName)
-            continue
+        foreach ($manifestPath in $ManifestPaths) {
+            $importedModule = Import-Module -Name $manifestPath -Force -ErrorAction Stop -PassThru
+            $importedModuleNames.Add($importedModule.Name)
         }
 
-        $selectedModule = $availableModules | Sort-Object Version -Descending | Select-Object -First 1
-        $importedModule = Import-Module -Name $selectedModule.Path -Force -PassThru
-        $importedModuleNames.Add($importedModule.Name)
+        $commands = @(Get-Command -Name $CommandName -Module $importedModuleNames.ToArray() -All -ErrorAction SilentlyContinue)
+        $candidateModuleNames = @(
+            $commands | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) } | ForEach-Object Source | Sort-Object -Unique
+        )
+
+        if ($candidateModuleNames.Count -eq 0) {
+            throw "Command '$CommandName' was not found in local resources: $($importedModuleNames.ToArray() -join ', ')."
+        }
+
+        if ($candidateModuleNames.Count -gt 1) {
+            throw "Command '$CommandName' is exported by multiple local resources: $($candidateModuleNames -join ', ')."
+        }
+
+        @($commands)[0]
     }
 
-    if ($missingModuleNames.Count -gt 0) {
-        throw "Local resources missing from store: $($missingModuleNames.ToArray() -join ', '). Run Restore-PSLResource."
-    }
-
-    $commands = @(Get-Command -Name $CommandName -Module $importedModuleNames.ToArray() -All -ErrorAction SilentlyContinue)
-    $candidateModuleNames = @(
-        $commands |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) } |
-            ForEach-Object Source |
-            Sort-Object -Unique
-    )
-
-    if ($candidateModuleNames.Count -eq 0) {
-        throw "Command '$CommandName' was not found in local resources: $($importedModuleNames.ToArray() -join ', ')."
-    }
-
-    if ($candidateModuleNames.Count -gt 1) {
-        throw "Command '$CommandName' is exported by multiple local resources: $($candidateModuleNames -join ', ')."
-    }
-
-    Invoke-PslrmCommandWithArgumentTokens -Command @($commands)[0] -ArgumentTokens $ArgumentTokens
+    Invoke-PslrmCommandWithArgumentTokens -Command $resolvedCommand -ArgumentTokens $ArgumentTokens
 }
 
 function New-DataAddedSubscription {
@@ -831,6 +965,21 @@ function Invoke-InIsolatedRunspace {
         throw "Lockfile does not contain any local resources: $lockfilePath"
     }
 
+    $manifestPaths = [string[]]@(
+        foreach ($moduleName in $moduleNames) {
+            $lockEntry = $lockData[$moduleName]
+            $lockedVersion = if ($lockEntry -is [System.Collections.IDictionary] -and $lockEntry.Contains('Version')) {
+                [string] $lockEntry['Version']
+            }
+
+            if ([string]::IsNullOrWhiteSpace($lockedVersion)) {
+                throw "Lockfile entry for local resource '$moduleName' has no version. Run Restore-PSLResource."
+            }
+
+            Resolve-PslrmLockedModuleManifest -StorePath $storePath -Name $moduleName -Version $lockedVersion
+        }
+    )
+
     if ($null -eq $ArgumentTokens) {
         $ArgumentTokens = @()
     }
@@ -861,6 +1010,8 @@ function Invoke-InIsolatedRunspace {
         'Get-PslrmParameterTokenInfo'
         'Get-PslrmCommandParameter'
         'Invoke-PslrmCommandWithArgumentTokens'
+        'Invoke-WithPslrmModulePathLock'
+        'Invoke-WithPslrmModulePath'
         'Invoke-PslrmRunspaceCommand'
     )
     $initialSessionState.Variables.Add(
@@ -890,19 +1041,30 @@ function Invoke-InIsolatedRunspace {
     else {
         [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($initialSessionState)
     }
-    $runspace.Open()
 
     $outputCollection = $null
     $streamForwarders = @()
     $errorSubscription = $null
+    $powerShell = $null
 
     try {
+        $openRunspaceScriptBlock = {
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            try {
+                $runspace.Open()
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }.GetNewClosure()
+        Invoke-WithPslrmModulePathLock -ScriptBlock $openRunspaceScriptBlock | Out-Null
+
         $powerShell = [System.Management.Automation.PowerShell]::Create()
         $powerShell.Runspace = $runspace
         $powerShell = $powerShell.AddCommand($runspaceInvokerName)
         $powerShell = $powerShell.AddParameter('ProjectRoot', $ProjectRoot)
         $powerShell = $powerShell.AddParameter('StorePath', $storePath)
-        $powerShell = $powerShell.AddParameter('ModuleNames', $moduleNames)
+        $powerShell = $powerShell.AddParameter('ManifestPaths', $manifestPaths)
         $powerShell = $powerShell.AddParameter('CommandName', $CommandName)
         $powerShell = $powerShell.AddParameter('ArgumentTokens', $ArgumentTokens)
 

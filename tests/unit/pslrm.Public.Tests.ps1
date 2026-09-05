@@ -9,6 +9,8 @@ BeforeAll {
     $modulePath = Join-Path $moduleRoot 'pslrm.psd1'
     Import-Module $modulePath -Force
 
+    . (Join-Path $PSScriptRoot '..\support\Import-PslrmTestSupport.ps1')
+
     InModuleScope pslrm {
         function script:New-TestStoreModule {
             [CmdletBinding()]
@@ -31,7 +33,11 @@ BeforeAll {
 
                 [Parameter()]
                 [ValidateNotNullOrEmpty()]
-                [string] $Version = '1.0.0'
+                [string] $Version = '1.0.0',
+
+                [Parameter()]
+                [AllowNull()]
+                [string[]] $RequiredModules
             )
 
             $moduleRoot = Join-Path $ProjectRoot ".pslrm\$ModuleName\$Version"
@@ -43,17 +49,29 @@ BeforeAll {
 
             [System.IO.File]::WriteAllText($modulePath, $ModuleBody, $utf8NoBom)
 
-            $manifestContent = @(
-                '@{'
-                "    RootModule = '$ModuleName.psm1'"
-                "    ModuleVersion = '$Version'"
-                "    GUID = '$([guid]::NewGuid())'"
-                "    FunctionsToExport = @('$CommandName')"
-                '}'
-                ''
-            ) -join "`n"
+            $requiredModuleNames = @(
+                $RequiredModules |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            )
+            $manifestContent = [System.Collections.Generic.List[string]]::new()
+            $manifestContent.Add('@{')
+            $manifestContent.Add("    RootModule = '$ModuleName.psm1'")
+            $manifestContent.Add("    ModuleVersion = '$Version'")
+            $manifestContent.Add("    GUID = '$([guid]::NewGuid())'")
+            $manifestContent.Add("    FunctionsToExport = @('$CommandName')")
 
-            [System.IO.File]::WriteAllText($manifestPath, $manifestContent, $utf8NoBom)
+            if ($requiredModuleNames.Count -gt 0) {
+                $manifestContent.Add('    RequiredModules = @(')
+                foreach ($requiredModuleName in $requiredModuleNames) {
+                    $manifestContent.Add("        '$requiredModuleName'")
+                }
+                $manifestContent.Add('    )')
+            }
+
+            $manifestContent.Add('}')
+            $manifestContent.Add('')
+
+            [System.IO.File]::WriteAllText($manifestPath, ($manifestContent.ToArray() -join "`n"), $utf8NoBom)
         }
 
         function script:New-TestPSResourceInfo {
@@ -337,6 +355,251 @@ Export-ModuleMember -Function 'Invoke-LocalEcho'
             $actual.Second | Should -BeExactly 'two'
             $actual.Module | Should -BeExactly 'LocalEchoModule'
             Get-Module -Name 'LocalEchoModule' | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'restores the process module path before executing the target command' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-module-path'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ ModulePathProbe = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ ModulePathProbe = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ModulePathProbe' -CommandName 'Get-ModulePathProbe' -ModuleBody @'
+function Get-ModulePathProbe {
+    [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+}
+
+Export-ModuleMember -Function 'Get-ModulePathProbe'
+'@
+
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $expectedModulePath = "pslrm-test-original-$PID"
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedModulePath, 'Process')
+                $observedModulePath = [string](Invoke-PSLResource -Path $root -CommandName 'Get-ModulePathProbe')
+                $observedModulePath | Should -BeExactly $expectedModulePath
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $expectedModulePath
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }
+    }
+
+    It 'serializes module path changes across isolated module instances' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-module-path-concurrent'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ ConcurrentModulePathProbe = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ ConcurrentModulePathProbe = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ConcurrentModulePathProbe' -CommandName 'Get-ConcurrentModulePathValue' -ModuleBody @'
+[PslrmTestImportProbe]::EnterImport()
+
+function Get-ConcurrentModulePathValue {
+    'ok'
+}
+
+Export-ModuleMember -Function 'Get-ConcurrentModulePathValue'
+'@
+
+            [PslrmTestImportProbe]::Reset()
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $expectedModulePath = "pslrm-test-concurrent-original-$PID"
+            $modulePath = (Get-Module -Name pslrm).Path
+            $powerShells = @(
+                [System.Management.Automation.PowerShell]::Create()
+                [System.Management.Automation.PowerShell]::Create()
+            )
+            $asyncResults = @($null, $null)
+            $ended = @($false, $false)
+
+            try {
+                $powerShells[0].AddScript(@'
+param(
+    [string] $ModulePath,
+    [string] $ProjectRoot
+)
+
+Import-Module -Name $ModulePath -Force
+[PslrmTestImportProbe]::FirstInvocationReady.Set()
+[PslrmTestImportProbe]::ReleaseInvocations.Wait()
+Invoke-PSLResource -Path $ProjectRoot -CommandName 'Get-ConcurrentModulePathValue'
+'@).AddParameter('ModulePath', $modulePath).AddParameter('ProjectRoot', $root) | Out-Null
+
+                $powerShells[1].AddScript(@'
+param(
+    [string] $ModulePath,
+    [string] $ProjectRoot
+)
+
+Import-Module -Name $ModulePath -Force
+[PslrmTestImportProbe]::SecondInvocationReady.Set()
+[PslrmTestImportProbe]::ReleaseInvocations.Wait()
+Invoke-PSLResource -Path $ProjectRoot -CommandName 'Get-ConcurrentModulePathValue'
+'@).AddParameter('ModulePath', $modulePath).AddParameter('ProjectRoot', $root) | Out-Null
+
+                $asyncResults[0] = $powerShells[0].BeginInvoke()
+                [PslrmTestImportProbe]::FirstInvocationReady.Wait(5000) | Should -BeTrue
+                $asyncResults[1] = $powerShells[1].BeginInvoke()
+                [PslrmTestImportProbe]::SecondInvocationReady.Wait(5000) | Should -BeTrue
+
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedModulePath, 'Process')
+                [PslrmTestImportProbe]::ReleaseInvocations.Set()
+
+                $firstImportEntered = [PslrmTestImportProbe]::FirstImportEntered.Wait(5000)
+                if (-not $firstImportEntered) {
+                    throw 'The first test import did not start.'
+                }
+
+                [PslrmTestImportProbe]::SecondImportEntered.Wait(1000) | Should -BeFalse
+
+                [PslrmTestImportProbe]::ReleaseImports.Set()
+                foreach ($asyncResult in $asyncResults) {
+                    $asyncResult.AsyncWaitHandle.WaitOne(5000) | Should -BeTrue
+                }
+
+                for ($index = 0; $index -lt $powerShells.Count; $index++) {
+                    $output = @($powerShells[$index].EndInvoke($asyncResults[$index]))
+                    $ended[$index] = $true
+                    $powerShells[$index].Streams.Error | Should -BeNullOrEmpty
+                    $output | Should -BeExactly @('ok')
+                }
+
+                [PslrmTestImportProbe]::GetMaxActiveImportCount() | Should -Be 1
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $expectedModulePath
+            }
+            finally {
+                [PslrmTestImportProbe]::ReleaseInvocations.Set()
+                [PslrmTestImportProbe]::ReleaseImports.Set()
+                for ($index = 0; $index -lt $powerShells.Count; $index++) {
+                    if ($null -ne $asyncResults[$index] -and -not $ended[$index]) {
+                        try {
+                            if ($asyncResults[$index].AsyncWaitHandle.WaitOne(5000)) {
+                                $powerShells[$index].EndInvoke($asyncResults[$index]) | Out-Null
+                            }
+                            else {
+                                $powerShells[$index].Stop()
+                            }
+                        }
+                        catch {
+                        }
+                    }
+                    $powerShells[$index].Dispose()
+                }
+                [PslrmTestImportProbe]::Reset()
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }
+    }
+
+    It 'invokes the locked version when a newer user-wide module has the same name' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-locked-direct'
+            $userRoot = Join-Path $TestDrive 'user-invoke-locked-direct'
+            New-Item -ItemType Directory -Path $root, $userRoot -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LockedDirectModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LockedDirectModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LockedDirectModule' -CommandName 'Get-LockedDirectValue' -ModuleBody @'
+function Get-LockedDirectValue {
+    'locked'
+}
+
+Export-ModuleMember -Function 'Get-LockedDirectValue'
+'@
+
+            New-TestStoreModule -ProjectRoot $userRoot -ModuleName 'LockedDirectModule' -CommandName 'Get-LockedDirectValue' -Version '2.0.0' -ModuleBody @'
+function Get-LockedDirectValue {
+    'newer-user-wide'
+}
+
+Export-ModuleMember -Function 'Get-LockedDirectValue'
+'@
+
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $separator = [string][System.IO.Path]::PathSeparator
+            $userStorePath = Join-Path $userRoot '.pslrm'
+            $modulePath = if ([string]::IsNullOrWhiteSpace($originalModulePath)) {
+                $userStorePath
+            }
+            else {
+                $userStorePath, $originalModulePath -join $separator
+            }
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $modulePath, 'Process')
+                Invoke-PSLResource -Path $root -CommandName 'Get-LockedDirectValue' | Should -BeExactly 'locked'
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }
+    }
+
+    It 'resolves a locked transitive dependency instead of a newer user-wide module' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-locked-transitive'
+            $userRoot = Join-Path $TestDrive 'user-invoke-locked-transitive'
+            New-Item -ItemType Directory -Path $root, $userRoot -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{
+                ALockedParentModule = @{ Repository = 'PSGallery' }
+                ZLockedDependencyModule = @{ Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{
+                ALockedParentModule = @{ Version = '1.0.0'; Repository = 'PSGallery' }
+                ZLockedDependencyModule = @{ Version = '1.0.0'; Repository = 'PSGallery' }
+            }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ZLockedDependencyModule' -CommandName 'Get-LockedDependencyValue' -ModuleBody @'
+function Get-LockedDependencyValue {
+    'locked-dependency'
+}
+
+Export-ModuleMember -Function 'Get-LockedDependencyValue'
+'@
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ALockedParentModule' -CommandName 'Get-LockedParentValue' -RequiredModules @('ZLockedDependencyModule') -ModuleBody @'
+function Get-LockedParentValue {
+    Get-LockedDependencyValue
+}
+
+Export-ModuleMember -Function 'Get-LockedParentValue'
+'@
+
+            New-TestStoreModule -ProjectRoot $userRoot -ModuleName 'ZLockedDependencyModule' -CommandName 'Get-LockedDependencyValue' -Version '2.0.0' -ModuleBody @'
+function Get-LockedDependencyValue {
+    'newer-user-wide-dependency'
+}
+
+Export-ModuleMember -Function 'Get-LockedDependencyValue'
+'@
+
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $separator = [string][System.IO.Path]::PathSeparator
+            $userStorePath = Join-Path $userRoot '.pslrm'
+            $modulePath = if ([string]::IsNullOrWhiteSpace($originalModulePath)) {
+                $userStorePath
+            }
+            else {
+                $userStorePath, $originalModulePath -join $separator
+            }
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $modulePath, 'Process')
+                Invoke-PSLResource -Path $root -CommandName 'Get-LockedParentValue' | Should -BeExactly 'locked-dependency'
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
         }
     }
 

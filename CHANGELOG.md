@@ -11,6 +11,10 @@ This project uses prerelease versions such as 0.0.1-alpha.
 
 - Add natural argument forwarding to `Invoke-PSLResource` with `-ArgumentTokens` for arrays.
 
+### Fixed
+
+- Fix isolated `Invoke-PSLResource` to honor locked versions and restore `PSModulePath`.
+
 ## [0.0.1] - 2026-05-30
 
 ### Changed
