@@ -688,14 +688,10 @@ function ConvertTo-InvocationArguments {
     }
 }
 
-function Invoke-WithPslrmModulePath {
+function Invoke-WithPslrmModulePathLock {
     [CmdletBinding()]
     [OutputType([object])]
     param(
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string] $StorePath,
-
         [Parameter(Mandatory)]
         [ValidateNotNull()]
         [scriptblock] $ScriptBlock
@@ -717,6 +713,36 @@ function Invoke-WithPslrmModulePath {
             throw 'The PSLRM module path mutex was abandoned. Run the operation again after the previous invocation has exited.'
         }
 
+        & $ScriptBlock
+    }
+    finally {
+        try {
+            if ($mutexOwned) {
+                $mutex.ReleaseMutex()
+            }
+        }
+        finally {
+            if ($null -ne $mutex) {
+                $mutex.Dispose()
+            }
+        }
+    }
+}
+
+function Invoke-WithPslrmModulePath {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $StorePath,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [scriptblock] $ScriptBlock
+    )
+
+    $modulePathScriptBlock = {
         $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
         try {
             $separator = [string][System.IO.Path]::PathSeparator
@@ -741,19 +767,9 @@ function Invoke-WithPslrmModulePath {
         finally {
             [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
         }
-    }
-    finally {
-        try {
-            if ($mutexOwned) {
-                $mutex.ReleaseMutex()
-            }
-        }
-        finally {
-            if ($null -ne $mutex) {
-                $mutex.Dispose()
-            }
-        }
-    }
+    }.GetNewClosure()
+
+    Invoke-WithPslrmModulePathLock -ScriptBlock $modulePathScriptBlock
 }
 
 function Invoke-PslrmRunspaceCommand {
@@ -994,6 +1010,7 @@ function Invoke-InIsolatedRunspace {
         'Get-PslrmParameterTokenInfo'
         'Get-PslrmCommandParameter'
         'Invoke-PslrmCommandWithArgumentTokens'
+        'Invoke-WithPslrmModulePathLock'
         'Invoke-WithPslrmModulePath'
         'Invoke-PslrmRunspaceCommand'
     )
@@ -1024,13 +1041,24 @@ function Invoke-InIsolatedRunspace {
     else {
         [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($initialSessionState)
     }
-    $runspace.Open()
 
     $outputCollection = $null
     $streamForwarders = @()
     $errorSubscription = $null
+    $powerShell = $null
 
     try {
+        $openRunspaceScriptBlock = {
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            try {
+                $runspace.Open()
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }.GetNewClosure()
+        Invoke-WithPslrmModulePathLock -ScriptBlock $openRunspaceScriptBlock | Out-Null
+
         $powerShell = [System.Management.Automation.PowerShell]::Create()
         $powerShell.Runspace = $runspace
         $powerShell = $powerShell.AddCommand($runspaceInvokerName)

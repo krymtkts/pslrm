@@ -375,14 +375,14 @@ Export-ModuleMember -Function 'Get-ModulePathProbe'
 '@
 
             $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $expectedModulePath = "pslrm-test-original-$PID"
 
             try {
-                # NOTE: PowerShell 7 can rebuild PSModulePath while opening a runspace; the private helper tests exact restoration.
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedModulePath, 'Process')
                 $observedModulePath = [string](Invoke-PSLResource -Path $root -CommandName 'Get-ModulePathProbe')
-                $observedModulePath -split [regex]::Escape([string][System.IO.Path]::PathSeparator) |
-                    Should -Not -Contain (Get-StorePath -ProjectRoot $root)
-                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') -split [regex]::Escape([string][System.IO.Path]::PathSeparator) |
-                    Should -Not -Contain (Get-StorePath -ProjectRoot $root)
+                $observedModulePath | Should -BeExactly $expectedModulePath
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $expectedModulePath
             }
             finally {
                 [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
@@ -410,6 +410,7 @@ Export-ModuleMember -Function 'Get-ConcurrentModulePathValue'
 
             [PslrmTestImportProbe]::Reset()
             $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $expectedModulePath = "pslrm-test-concurrent-original-$PID"
             $modulePath = (Get-Module -Name pslrm).Path
             $powerShells = @(
                 [System.Management.Automation.PowerShell]::Create()
@@ -419,6 +420,7 @@ Export-ModuleMember -Function 'Get-ConcurrentModulePathValue'
             $ended = @($false, $false)
 
             try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedModulePath, 'Process')
                 $powerShells[0].AddScript(@'
 param(
     [string] $ModulePath,
@@ -463,8 +465,8 @@ Invoke-PSLResource -Path $ProjectRoot -CommandName 'Get-ConcurrentModulePathValu
                 }
 
                 [PslrmTestImportProbe]::GetMaxActiveImportCount() | Should -Be 1
-                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') -split [regex]::Escape([string][System.IO.Path]::PathSeparator) |
-                    Should -Not -Contain (Get-StorePath -ProjectRoot $root)
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $expectedModulePath
             }
             finally {
                 [PslrmTestImportProbe]::ReleaseImports.Set()
