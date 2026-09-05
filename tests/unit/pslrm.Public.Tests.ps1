@@ -31,7 +31,11 @@ BeforeAll {
 
                 [Parameter()]
                 [ValidateNotNullOrEmpty()]
-                [string] $Version = '1.0.0'
+                [string] $Version = '1.0.0',
+
+                [Parameter()]
+                [AllowNull()]
+                [string[]] $RequiredModules
             )
 
             $moduleRoot = Join-Path $ProjectRoot ".pslrm\$ModuleName\$Version"
@@ -43,17 +47,29 @@ BeforeAll {
 
             [System.IO.File]::WriteAllText($modulePath, $ModuleBody, $utf8NoBom)
 
-            $manifestContent = @(
-                '@{'
-                "    RootModule = '$ModuleName.psm1'"
-                "    ModuleVersion = '$Version'"
-                "    GUID = '$([guid]::NewGuid())'"
-                "    FunctionsToExport = @('$CommandName')"
-                '}'
-                ''
-            ) -join "`n"
+            $requiredModuleNames = @(
+                $RequiredModules |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            )
+            $manifestContent = [System.Collections.Generic.List[string]]::new()
+            $manifestContent.Add('@{')
+            $manifestContent.Add("    RootModule = '$ModuleName.psm1'")
+            $manifestContent.Add("    ModuleVersion = '$Version'")
+            $manifestContent.Add("    GUID = '$([guid]::NewGuid())'")
+            $manifestContent.Add("    FunctionsToExport = @('$CommandName')")
 
-            [System.IO.File]::WriteAllText($manifestPath, $manifestContent, $utf8NoBom)
+            if ($requiredModuleNames.Count -gt 0) {
+                $manifestContent.Add('    RequiredModules = @(')
+                foreach ($requiredModuleName in $requiredModuleNames) {
+                    $manifestContent.Add("        '$requiredModuleName'")
+                }
+                $manifestContent.Add('    )')
+            }
+
+            $manifestContent.Add('}')
+            $manifestContent.Add('')
+
+            [System.IO.File]::WriteAllText($manifestPath, ($manifestContent.ToArray() -join "`n"), $utf8NoBom)
         }
 
         function script:New-TestPSResourceInfo {
@@ -337,6 +353,110 @@ Export-ModuleMember -Function 'Invoke-LocalEcho'
             $actual.Second | Should -BeExactly 'two'
             $actual.Module | Should -BeExactly 'LocalEchoModule'
             Get-Module -Name 'LocalEchoModule' | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'invokes the locked version when a newer user-wide module has the same name' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-locked-direct'
+            $userRoot = Join-Path $TestDrive 'user-invoke-locked-direct'
+            New-Item -ItemType Directory -Path $root, $userRoot -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ LockedDirectModule = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ LockedDirectModule = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'LockedDirectModule' -CommandName 'Get-LockedDirectValue' -ModuleBody @'
+function Get-LockedDirectValue {
+    'locked'
+}
+
+Export-ModuleMember -Function 'Get-LockedDirectValue'
+'@
+
+            New-TestStoreModule -ProjectRoot $userRoot -ModuleName 'LockedDirectModule' -CommandName 'Get-LockedDirectValue' -Version '2.0.0' -ModuleBody @'
+function Get-LockedDirectValue {
+    'newer-user-wide'
+}
+
+Export-ModuleMember -Function 'Get-LockedDirectValue'
+'@
+
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $separator = [string][System.IO.Path]::PathSeparator
+            $userStorePath = Join-Path $userRoot '.pslrm'
+            $modulePath = if ([string]::IsNullOrWhiteSpace($originalModulePath)) {
+                $userStorePath
+            }
+            else {
+                $userStorePath, $originalModulePath -join $separator
+            }
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $modulePath, 'Process')
+                Invoke-PSLResource -Path $root -CommandName 'Get-LockedDirectValue' | Should -BeExactly 'locked'
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }
+    }
+
+    It 'resolves a locked transitive dependency instead of a newer user-wide module' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-locked-transitive'
+            $userRoot = Join-Path $TestDrive 'user-invoke-locked-transitive'
+            New-Item -ItemType Directory -Path $root, $userRoot -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{
+                ALockedParentModule = @{ Repository = 'PSGallery' }
+                ZLockedDependencyModule = @{ Repository = 'PSGallery' }
+            }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{
+                ALockedParentModule = @{ Version = '1.0.0'; Repository = 'PSGallery' }
+                ZLockedDependencyModule = @{ Version = '1.0.0'; Repository = 'PSGallery' }
+            }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ZLockedDependencyModule' -CommandName 'Get-LockedDependencyValue' -ModuleBody @'
+function Get-LockedDependencyValue {
+    'locked-dependency'
+}
+
+Export-ModuleMember -Function 'Get-LockedDependencyValue'
+'@
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ALockedParentModule' -CommandName 'Get-LockedParentValue' -RequiredModules @('ZLockedDependencyModule') -ModuleBody @'
+function Get-LockedParentValue {
+    Get-LockedDependencyValue
+}
+
+Export-ModuleMember -Function 'Get-LockedParentValue'
+'@
+
+            New-TestStoreModule -ProjectRoot $userRoot -ModuleName 'ZLockedDependencyModule' -CommandName 'Get-LockedDependencyValue' -Version '2.0.0' -ModuleBody @'
+function Get-LockedDependencyValue {
+    'newer-user-wide-dependency'
+}
+
+Export-ModuleMember -Function 'Get-LockedDependencyValue'
+'@
+
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $separator = [string][System.IO.Path]::PathSeparator
+            $userStorePath = Join-Path $userRoot '.pslrm'
+            $modulePath = if ([string]::IsNullOrWhiteSpace($originalModulePath)) {
+                $userStorePath
+            }
+            else {
+                $userStorePath, $originalModulePath -join $separator
+            }
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $modulePath, 'Process')
+                Invoke-PSLResource -Path $root -CommandName 'Get-LockedParentValue' | Should -BeExactly 'locked-dependency'
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
         }
     }
 

@@ -8,6 +8,58 @@ BeforeAll {
 
     $modulePath = Join-Path $moduleRoot 'pslrm.psm1'
     Import-Module $modulePath -Force
+    InModuleScope pslrm {
+        function script:New-TestLockedManifest {
+            [CmdletBinding()]
+            param(
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $StorePath,
+
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $Name,
+
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $DirectoryName,
+
+                [Parameter(Mandatory)]
+                [ValidateNotNullOrEmpty()]
+                [string] $ModuleVersion,
+
+                [Parameter()]
+                [AllowNull()]
+                [string] $Prerelease
+            )
+
+            $moduleRoot = Join-Path $StorePath "$Name\$DirectoryName"
+            New-Item -ItemType Directory -Path $moduleRoot -Force | Out-Null
+
+            $manifestPath = Join-Path $moduleRoot "$Name.psd1"
+            $manifestContent = [System.Collections.Generic.List[string]]::new()
+            $manifestContent.Add('@{')
+            $manifestContent.Add("    ModuleVersion = '$ModuleVersion'")
+
+            if (-not [string]::IsNullOrWhiteSpace($Prerelease)) {
+                $manifestContent.Add('    PrivateData = @{')
+                $manifestContent.Add('        PSData = @{')
+                $manifestContent.Add("            Prerelease = '$Prerelease'")
+                $manifestContent.Add('        }')
+                $manifestContent.Add('    }')
+            }
+
+            $manifestContent.Add('}')
+            $manifestContent.Add('')
+            [System.IO.File]::WriteAllText(
+                $manifestPath,
+                ($manifestContent.ToArray() -join "`n"),
+                [System.Text.UTF8Encoding]::new($false)
+            )
+
+            $manifestPath
+        }
+    }
 }
 
 Describe 'Convert-VersionToNormalizedVersionString' {
@@ -320,6 +372,99 @@ Describe 'Read-Lockfile' {
         }
 
         $result.Read | Should-BeEquivalent $result.Expected
+    }
+}
+
+Describe 'Resolve-PslrmLockedModuleManifest' {
+    It 'returns the manifest whose declared stable version matches the lockfile' {
+        InModuleScope pslrm {
+            $storePath = Join-Path $TestDrive 'store-stable'
+            $manifestPath = New-TestLockedManifest `
+                -StorePath $storePath `
+                -Name 'StableModule' `
+                -DirectoryName '1.0.0' `
+                -ModuleVersion '1.0.0'
+
+            Resolve-PslrmLockedModuleManifest -StorePath $storePath -Name 'StableModule' -Version '1.0.0' |
+                Should -BeExactly $manifestPath
+        }
+    }
+
+    It 'matches prerelease metadata declared in the manifest instead of the directory name' {
+        InModuleScope pslrm {
+            $storePath = Join-Path $TestDrive 'store-prerelease'
+            $manifestPath = New-TestLockedManifest `
+                -StorePath $storePath `
+                -Name 'PrereleaseModule' `
+                -DirectoryName '1.0.0' `
+                -ModuleVersion '1.0.0' `
+                -Prerelease 'alpha.1'
+
+            Resolve-PslrmLockedModuleManifest -StorePath $storePath -Name 'PrereleaseModule' -Version '1.0.0-alpha.1' |
+                Should -BeExactly $manifestPath
+        }
+    }
+
+    It 'errors with a restore instruction when the locked resource is missing' {
+        InModuleScope pslrm {
+            $storePath = Join-Path $TestDrive 'store-missing'
+
+            {
+                Resolve-PslrmLockedModuleManifest -StorePath $storePath -Name 'MissingModule' -Version '1.0.0'
+            } | Should -Throw '*Restore-PSLResource*'
+        }
+    }
+
+    It 'errors with a restore instruction when no manifest has the locked version' {
+        InModuleScope pslrm {
+            $storePath = Join-Path $TestDrive 'store-mismatch'
+            New-TestLockedManifest `
+                -StorePath $storePath `
+                -Name 'MismatchModule' `
+                -DirectoryName '1.0.0' `
+                -ModuleVersion '2.0.0' | Out-Null
+
+            {
+                Resolve-PslrmLockedModuleManifest -StorePath $storePath -Name 'MismatchModule' -Version '1.0.0'
+            } | Should -Throw '*Restore-PSLResource*'
+        }
+    }
+
+    It 'errors with a restore instruction when a candidate manifest cannot be parsed' {
+        InModuleScope pslrm {
+            $moduleRoot = Join-Path $TestDrive 'store-invalid\InvalidModule\1.0.0'
+            New-Item -ItemType Directory -Path $moduleRoot -Force | Out-Null
+            $manifestPath = Join-Path $moduleRoot 'InvalidModule.psd1'
+            [System.IO.File]::WriteAllText(
+                $manifestPath,
+                '@{ ModuleVersion = ''1.0.0''',
+                [System.Text.UTF8Encoding]::new($false)
+            )
+
+            {
+                Resolve-PslrmLockedModuleManifest -StorePath (Join-Path $TestDrive 'store-invalid') -Name 'InvalidModule' -Version '1.0.0'
+            } | Should -Throw '*Restore-PSLResource*'
+        }
+    }
+
+    It 'errors with a restore instruction when multiple manifests declare the locked version' {
+        InModuleScope pslrm {
+            $storePath = Join-Path $TestDrive 'store-duplicate'
+            New-TestLockedManifest `
+                -StorePath $storePath `
+                -Name 'DuplicateModule' `
+                -DirectoryName '1.0.0' `
+                -ModuleVersion '1.0.0' | Out-Null
+            New-TestLockedManifest `
+                -StorePath $storePath `
+                -Name 'DuplicateModule' `
+                -DirectoryName 'duplicate' `
+                -ModuleVersion '1.0.0' | Out-Null
+
+            {
+                Resolve-PslrmLockedModuleManifest -StorePath $storePath -Name 'DuplicateModule' -Version '1.0.0'
+            } | Should -Throw '*Restore-PSLResource*'
+        }
     }
 }
 
