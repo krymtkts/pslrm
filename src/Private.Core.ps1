@@ -688,6 +688,74 @@ function ConvertTo-InvocationArguments {
     }
 }
 
+function Invoke-WithPslrmModulePath {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $StorePath,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [scriptblock] $ScriptBlock
+    )
+
+    $mutex = $null
+    $mutexOwned = $false
+
+    try {
+        $mutex = [System.Threading.Mutex]::new($false, "pslrm-$PID-PSModulePath")
+
+        try {
+            $null = $mutex.WaitOne()
+            $mutexOwned = $true
+        }
+        catch [System.Threading.AbandonedMutexException] {
+            # NOTE: The current thread owns an abandoned mutex, so release it in the outer finally before failing.
+            $mutexOwned = $true
+            throw 'The PSLRM module path mutex was abandoned. Run the operation again after the previous invocation has exited.'
+        }
+
+        $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+        try {
+            $separator = [string][System.IO.Path]::PathSeparator
+            $modulePathEntries = [System.Collections.Generic.List[string]]::new()
+            $modulePathEntries.Add($StorePath)
+
+            if (-not [string]::IsNullOrWhiteSpace($originalModulePath)) {
+                foreach ($entry in ($originalModulePath -split [regex]::Escape($separator))) {
+                    if ([string]::IsNullOrWhiteSpace($entry)) {
+                        continue
+                    }
+
+                    if (-not $modulePathEntries.Contains($entry)) {
+                        $modulePathEntries.Add($entry)
+                    }
+                }
+            }
+
+            [Environment]::SetEnvironmentVariable('PSModulePath', ($modulePathEntries.ToArray() -join $separator), 'Process')
+            & $ScriptBlock
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+        }
+    }
+    finally {
+        try {
+            if ($mutexOwned) {
+                $mutex.ReleaseMutex()
+            }
+        }
+        finally {
+            if ($null -ne $mutex) {
+                $mutex.Dispose()
+            }
+        }
+    }
+}
+
 function Invoke-PslrmRunspaceCommand {
     [CmdletBinding()]
     [OutputType([object])]
@@ -715,49 +783,31 @@ function Invoke-PslrmRunspaceCommand {
 
     Set-Location -LiteralPath $ProjectRoot
 
-    $separator = [string][System.IO.Path]::PathSeparator
-    $currentModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
-    $modulePathEntries = [System.Collections.Generic.List[string]]::new()
-    $modulePathEntries.Add($StorePath)
+    $resolvedCommand = Invoke-WithPslrmModulePath -StorePath $StorePath -ScriptBlock {
+        $importedModuleNames = [System.Collections.Generic.List[string]]::new()
 
-    if (-not [string]::IsNullOrWhiteSpace($currentModulePath)) {
-        foreach ($entry in ($currentModulePath -split [regex]::Escape($separator))) {
-            if ([string]::IsNullOrWhiteSpace($entry)) {
-                continue
-            }
-
-            if (-not $modulePathEntries.Contains($entry)) {
-                $modulePathEntries.Add($entry)
-            }
+        foreach ($manifestPath in $ManifestPaths) {
+            $importedModule = Import-Module -Name $manifestPath -Force -ErrorAction Stop -PassThru
+            $importedModuleNames.Add($importedModule.Name)
         }
+
+        $commands = @(Get-Command -Name $CommandName -Module $importedModuleNames.ToArray() -All -ErrorAction SilentlyContinue)
+        $candidateModuleNames = @(
+            $commands | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) } | ForEach-Object Source | Sort-Object -Unique
+        )
+
+        if ($candidateModuleNames.Count -eq 0) {
+            throw "Command '$CommandName' was not found in local resources: $($importedModuleNames.ToArray() -join ', ')."
+        }
+
+        if ($candidateModuleNames.Count -gt 1) {
+            throw "Command '$CommandName' is exported by multiple local resources: $($candidateModuleNames -join ', ')."
+        }
+
+        @($commands)[0]
     }
 
-    [Environment]::SetEnvironmentVariable('PSModulePath', ($modulePathEntries.ToArray() -join $separator), 'Process')
-
-    $importedModuleNames = [System.Collections.Generic.List[string]]::new()
-
-    foreach ($manifestPath in $ManifestPaths) {
-        $importedModule = Import-Module -Name $manifestPath -Force -ErrorAction Stop -PassThru
-        $importedModuleNames.Add($importedModule.Name)
-    }
-
-    $commands = @(Get-Command -Name $CommandName -Module $importedModuleNames.ToArray() -All -ErrorAction SilentlyContinue)
-    $candidateModuleNames = @(
-        $commands |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) } |
-            ForEach-Object Source |
-            Sort-Object -Unique
-    )
-
-    if ($candidateModuleNames.Count -eq 0) {
-        throw "Command '$CommandName' was not found in local resources: $($importedModuleNames.ToArray() -join ', ')."
-    }
-
-    if ($candidateModuleNames.Count -gt 1) {
-        throw "Command '$CommandName' is exported by multiple local resources: $($candidateModuleNames -join ', ')."
-    }
-
-    Invoke-PslrmCommandWithArgumentTokens -Command @($commands)[0] -ArgumentTokens $ArgumentTokens
+    Invoke-PslrmCommandWithArgumentTokens -Command $resolvedCommand -ArgumentTokens $ArgumentTokens
 }
 
 function New-DataAddedSubscription {
@@ -944,6 +994,7 @@ function Invoke-InIsolatedRunspace {
         'Get-PslrmParameterTokenInfo'
         'Get-PslrmCommandParameter'
         'Invoke-PslrmCommandWithArgumentTokens'
+        'Invoke-WithPslrmModulePath'
         'Invoke-PslrmRunspaceCommand'
     )
     $initialSessionState.Variables.Add(

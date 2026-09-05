@@ -8,6 +8,9 @@ BeforeAll {
 
     $modulePath = Join-Path $moduleRoot 'pslrm.psm1'
     Import-Module $modulePath -Force
+
+    . (Join-Path $PSScriptRoot '..\support\Import-PslrmTestSupport.ps1')
+
     InModuleScope pslrm {
         function script:New-TestLockedManifest {
             [CmdletBinding()]
@@ -464,6 +467,118 @@ Describe 'Resolve-PslrmLockedModuleManifest' {
             {
                 Resolve-PslrmLockedModuleManifest -StorePath $storePath -Name 'DuplicateModule' -Version '1.0.0'
             } | Should -Throw '*Restore-PSLResource*'
+        }
+    }
+}
+
+Describe 'Invoke-WithPslrmModulePath' {
+    It 'prepends the store path and restores the original path after success' {
+        InModuleScope pslrm {
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $expectedOriginalPath = "pslrm-test-original-$PID"
+            $storePath = Join-Path $TestDrive 'module-path-success'
+            New-Item -ItemType Directory -Path $storePath -Force | Out-Null
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedOriginalPath, 'Process')
+                $observedModulePath = Invoke-WithPslrmModulePath -StorePath $storePath -ScriptBlock {
+                    [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+                }
+
+                ($observedModulePath -split [regex]::Escape([string][System.IO.Path]::PathSeparator))[0] |
+                    Should -BeExactly $storePath
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $expectedOriginalPath
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }
+    }
+
+    It 'restores the original path when the script block fails' {
+        InModuleScope pslrm {
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $expectedOriginalPath = "pslrm-test-original-$PID"
+            $storePath = Join-Path $TestDrive 'module-path-error'
+            New-Item -ItemType Directory -Path $storePath -Force | Out-Null
+            $thrown = $null
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedOriginalPath, 'Process')
+                try {
+                    Invoke-WithPslrmModulePath -StorePath $storePath -ScriptBlock {
+                        throw 'module path test failure'
+                    }
+                }
+                catch {
+                    $thrown = $_
+                }
+
+                $thrown.Exception.Message | Should -BeExactly 'module path test failure'
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $expectedOriginalPath
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }
+    }
+
+    It 'restores an undefined process path as undefined' {
+        InModuleScope pslrm {
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $storePath = Join-Path $TestDrive 'module-path-undefined'
+            New-Item -ItemType Directory -Path $storePath -Force | Out-Null
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $null, 'Process')
+                Invoke-WithPslrmModulePath -StorePath $storePath -ScriptBlock {
+                    [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+                } | Should -BeExactly $storePath
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeNullOrEmpty
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }
+    }
+
+    It 'fails and releases an abandoned mutex without changing the module path' {
+        InModuleScope pslrm {
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $mutexName = "pslrm-$PID-PSModulePath"
+            $ready = [System.Threading.ManualResetEventSlim]::new($false)
+            $ownerThread = $null
+            $thrown = $null
+
+            try {
+                $ownerThread = [PslrmTestMutexOwner]::StartAbandoned($mutexName, $ready)
+                $ready.Wait(5000) | Should -BeTrue
+                $ownerThread.Join(5000) | Should -BeTrue
+
+                try {
+                    Invoke-WithPslrmModulePath -StorePath (Join-Path $TestDrive 'module-path-abandoned') -ScriptBlock {
+                        'not reached'
+                    }
+                }
+                catch {
+                    $thrown = $_
+                }
+
+                $thrown.Exception.Message | Should -BeLike '*abandoned*'
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $originalModulePath
+            }
+            finally {
+                if ($null -ne $ownerThread -and $ownerThread.IsAlive) {
+                    $ownerThread.Join(5000) | Out-Null
+                }
+                [PslrmTestMutexOwner]::DisposeAll()
+                $ready.Dispose()
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
         }
     }
 }

@@ -9,6 +9,8 @@ BeforeAll {
     $modulePath = Join-Path $moduleRoot 'pslrm.psd1'
     Import-Module $modulePath -Force
 
+    . (Join-Path $PSScriptRoot '..\support\Import-PslrmTestSupport.ps1')
+
     InModuleScope pslrm {
         function script:New-TestStoreModule {
             [CmdletBinding()]
@@ -353,6 +355,139 @@ Export-ModuleMember -Function 'Invoke-LocalEcho'
             $actual.Second | Should -BeExactly 'two'
             $actual.Module | Should -BeExactly 'LocalEchoModule'
             Get-Module -Name 'LocalEchoModule' | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'restores the process module path before executing the target command' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-module-path'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ ModulePathProbe = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ ModulePathProbe = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ModulePathProbe' -CommandName 'Get-ModulePathProbe' -ModuleBody @'
+function Get-ModulePathProbe {
+    [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+}
+
+Export-ModuleMember -Function 'Get-ModulePathProbe'
+'@
+
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $expectedOriginalPath = "pslrm-test-original-$PID"
+
+            try {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedOriginalPath, 'Process')
+                Invoke-PSLResource -Path $root -CommandName 'Get-ModulePathProbe' |
+                    Should -BeExactly $expectedOriginalPath
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $expectedOriginalPath
+            }
+            finally {
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
+        }
+    }
+
+    It 'serializes module path changes across isolated module instances' {
+        InModuleScope pslrm {
+            $root = Join-Path $TestDrive 'proj-invoke-module-path-concurrent'
+            New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+            Write-PowerShellDataFile -Path (Join-Path $root 'psreq.psd1') -Data @{ ConcurrentModulePathProbe = @{ Repository = 'PSGallery' } }
+            Write-Lockfile -Path (Join-Path $root 'psreq.lock.psd1') -Data @{ ConcurrentModulePathProbe = @{ Version = '1.0.0'; Repository = 'PSGallery' } }
+
+            New-TestStoreModule -ProjectRoot $root -ModuleName 'ConcurrentModulePathProbe' -CommandName 'Get-ConcurrentModulePathValue' -ModuleBody @'
+[PslrmTestImportProbe]::EnterImport()
+
+function Get-ConcurrentModulePathValue {
+    'ok'
+}
+
+Export-ModuleMember -Function 'Get-ConcurrentModulePathValue'
+'@
+
+            [PslrmTestImportProbe]::Reset()
+            $originalModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Process')
+            $expectedOriginalPath = "pslrm-test-original-$PID"
+            $modulePath = (Get-Module -Name pslrm).Path
+            $powerShells = @(
+                [System.Management.Automation.PowerShell]::Create()
+                [System.Management.Automation.PowerShell]::Create()
+            )
+            $asyncResults = @($null, $null)
+            $ended = @($false, $false)
+
+            try {
+                $powerShells[0].AddScript(@'
+param(
+    [string] $ModulePath,
+    [string] $ProjectRoot
+)
+
+Import-Module -Name $ModulePath -Force
+Invoke-PSLResource -Path $ProjectRoot -CommandName 'Get-ConcurrentModulePathValue'
+'@).AddParameter('ModulePath', $modulePath).AddParameter('ProjectRoot', $root) | Out-Null
+
+                $powerShells[1].AddScript(@'
+param(
+    [string] $ModulePath,
+    [string] $ProjectRoot
+)
+
+Import-Module -Name $ModulePath -Force
+[PslrmTestImportProbe]::SecondInvocationStarted.Set()
+Invoke-PSLResource -Path $ProjectRoot -CommandName 'Get-ConcurrentModulePathValue'
+'@).AddParameter('ModulePath', $modulePath).AddParameter('ProjectRoot', $root) | Out-Null
+
+                [Environment]::SetEnvironmentVariable('PSModulePath', $expectedOriginalPath, 'Process')
+                $asyncResults[0] = $powerShells[0].BeginInvoke()
+                $firstImportEntered = [PslrmTestImportProbe]::FirstImportEntered.Wait(5000)
+                if (-not $firstImportEntered) {
+                    throw 'The first test import did not start.'
+                }
+
+                $asyncResults[1] = $powerShells[1].BeginInvoke()
+                [PslrmTestImportProbe]::SecondInvocationStarted.Wait(5000) | Should -BeTrue
+                [PslrmTestImportProbe]::SecondImportEntered.Wait(1000) | Should -BeFalse
+
+                [PslrmTestImportProbe]::ReleaseImports.Set()
+                foreach ($asyncResult in $asyncResults) {
+                    $asyncResult.AsyncWaitHandle.WaitOne(5000) | Should -BeTrue
+                }
+
+                for ($index = 0; $index -lt $powerShells.Count; $index++) {
+                    $output = @($powerShells[$index].EndInvoke($asyncResults[$index]))
+                    $ended[$index] = $true
+                    $powerShells[$index].Streams.Error | Should -BeNullOrEmpty
+                    $output | Should -BeExactly @('ok')
+                }
+
+                [PslrmTestImportProbe]::GetMaxActiveImportCount() | Should -Be 1
+                [Environment]::GetEnvironmentVariable('PSModulePath', 'Process') |
+                    Should -BeExactly $expectedOriginalPath
+            }
+            finally {
+                [PslrmTestImportProbe]::ReleaseImports.Set()
+                for ($index = 0; $index -lt $powerShells.Count; $index++) {
+                    if ($null -ne $asyncResults[$index] -and -not $ended[$index]) {
+                        try {
+                            if ($asyncResults[$index].AsyncWaitHandle.WaitOne(5000)) {
+                                $powerShells[$index].EndInvoke($asyncResults[$index]) | Out-Null
+                            }
+                            else {
+                                $powerShells[$index].Stop()
+                            }
+                        }
+                        catch {
+                        }
+                    }
+                    $powerShells[$index].Dispose()
+                }
+                [PslrmTestImportProbe]::Reset()
+                [Environment]::SetEnvironmentVariable('PSModulePath', $originalModulePath, 'Process')
+            }
         }
     }
 
