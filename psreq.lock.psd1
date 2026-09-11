@@ -17,6 +17,6 @@
     }
     'Pester' = @{
         'Repository' = 'PSGallery'
-        'Version' = '6.2.0-alpha1'
+        'Version' = '6.2.0'
     }
 }
